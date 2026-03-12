@@ -26,6 +26,7 @@ public class Demo {
         System.out.println("Instructions that stores a constant to an array:");
         for (IRFunction function : program.functions) {
             for (IRInstruction instruction : function.instructions) {
+                System.out.println("---pragya---inline number"+ instruction.irLineNumber);
                 if (instruction.opCode == IRInstruction.OpCode.ARRAY_STORE) {
                     if (instruction.operands[0] instanceof IRConstantOperand) {
                         System.out.print(String.format("Line %d:", instruction.irLineNumber));
@@ -33,8 +34,10 @@ public class Demo {
                     }
                 }
             }
+            
         }
         System.out.println();
+        
 
         // Print the name of all int scalars and int arrays with a size of 1
         System.out.println("Int scalars and 1-sized arrays:");
