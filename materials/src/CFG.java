@@ -24,27 +24,30 @@ public class CFG {
         List<Integer> startLNs = new ArrayList<>();
         List<Integer> endLNs = new ArrayList<>();
         Set<IRInstruction.OpCode> jumpInst = new HashSet<>(Arrays.asList(
-            IRInstruction.OpCode.GOTO, BREQ, BRNEQ, BRLT, BRGT, BRGEQ,
+            IRInstruction.OpCode.BREQ,
+            IRInstruction.OpCode.BRNEQ,
+            IRInstruction.OpCode.BRLT,
+            IRInstruction.OpCode.BRGT,
+            IRInstruction.OpCode.BRGEQ
 
         ));
 
         
-
         for (int i = 0; i < n ; i++) {
         //for (IRInstruction instruction : function.instructions) {
             IRInstruction inst = function.instructions.get(i);
             if (i == 0) {
                 //startLNs.add(inst.irLineNumber);
-                startLNs.add(i)
+                startLNs.add(i);
             }
             else if (inst.opCode == IRInstruction.OpCode.LABEL) { //labels are leader
                 //startLNs.append(inst.irLineNumber);
-                startLNs.add(i)
+                startLNs.add(i);
             }
-            else if jumpInst.contains(inst.opCode) { //instruction after a jump instruction
+            else if (jumpInst.contains(inst.opCode) || inst.opCode == IRInstruction.OpCode.GOTO) { //instruction after a jump instruction
                 if (i + 1 < n) {
-                    s//tartLNs.append(function.instructions.get(i + 1).irLineNumber); 
-                    startLNs.add(i+1)
+                    //startLNs.append(function.instructions.get(i + 1).irLineNumber); 
+                    startLNs.add(i+1);
                 }
                 
             }
@@ -58,7 +61,7 @@ public class CFG {
             //IRInstruction inst = function.instructions.get(j);
             int end;
             if (i + 1 < numNodes) { //there is another node
-                end = startLNs.get(i+1) - 1
+                end = startLNs.get(i+1) - 1;
             } else {
                 end = n - 1; //this is the last block
             }
@@ -70,24 +73,52 @@ public class CFG {
         for (int i = 0; i < numNodes; i++) {
             IRInstruction first = function.instructions.get(startLNs.get(i)); //get the first label
             if (first.opCode == IRInstruction.OpCode.LABEL) {
-                labelToBlock.put(IRInstruction.OpCode.LABEL.toString, i)
+                labelToBlock.put( ((IRLabelOperand) first.operands[0]).getName(), i);
             }
         }
         //<label, branch>
 
-        List<Integer> successors = new ArrayList<>;
+        List<List<Integer>> successors = new ArrayList<>();
+        List<List<Integer>> predecessors = new ArrayList<>();
+        for (int i = 0; i < numNodes; i++) {
+            successors.add(new ArrayList<>());
+            predecessors.add(new ArrayList<>());
+        }
 
         for (int i = 0; i < numNodes; i++) {
             IRInstruction last = function.instructions.get(endLNs.get(i));
             
             if (jumpInst.contains(last.opCode)) { //last instruction is a branch, go to the label
                 //add two edges  - true, false
+                if (i + 1 < numNodes) {
+                    successors.get(i).add(i+1);
+                    predecessors.get(i+1).add(i);
+                }
+                String targetLabel = ((IRLabelOperand) last.operands[0]).getName();   
+                int targetBlock = labelToBlock.get(targetLabel);
+                successors.get(i).add(targetBlock);
+                predecessors.get(targetBlock).add(i);
 
-            } else if last.opCode == IRInstruction.OpCode.GOTO {
+            } else if (last.opCode == IRInstruction.OpCode.GOTO) {
                 //add one edge
+                String targetLabel = last.operands[0].toString();
+                int targetBlock = labelToBlock.get(targetLabel);
+                successors.get(i).add(targetBlock);
+                predecessors.get(targetBlock).add(i);
             } else {
-
+                if (i + 1 < numNodes) {
+                    successors.get(i).add(i+1);
+                    predecessors.get(i+1).add(i);
+                }
             }
+        }
+
+        for (int i = 0; i < numNodes; i++) {
+            System.out.println("Block " + i);
+            System.out.println("Beginning Instruction " + startLNs.get(i));
+            System.out.println("Ending Instruction " + endLNs.get(i));
+            System.out.println("Successor Blocks " + successors.get(i));
+            System.out.println("================================");
         }
 
 
