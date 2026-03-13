@@ -26,12 +26,19 @@ public class IRInstruction {
 
     public int irLineNumber;
 
+    public boolean marked; //pragya
+    public boolean critical; //pragya
+
     public IRInstruction() {}
 
-    public IRInstruction(OpCode opCode, IROperand[] operands, int irLineNumber) {
+
+    //PRAGYA: added a mark boolean and a critical boolean for mark and sweep algorithm
+    public IRInstruction(OpCode opCode, IROperand[] operands, int irLineNumber, boolean marked, boolean critical) {
         this.opCode = opCode;
         this.operands = operands;
         this.irLineNumber = irLineNumber;
+        this.marked = false;
+        this.critical = false;
     }
 
 }

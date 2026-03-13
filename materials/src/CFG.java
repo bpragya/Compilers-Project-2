@@ -10,19 +10,7 @@ public class CFG {
         IRReader irReader = new IRReader();
         IRProgram program = irReader.parseIRFile(args[0]);
 
-        // Build CFG for each function
-        for (IRFunction function : program.functions) {
-            System.out.println("=== CFG for function: " + function.name + " ===");
-            buildCFG(function);
-            System.out.println();
-        }
-    }
 
-    static void buildCFG(IRFunction function) {
-        int n = function.instructions.size();
-        int numNodes = 0;
-        List<Integer> startLNs = new ArrayList<>();
-        List<Integer> endLNs = new ArrayList<>();
         Set<IRInstruction.OpCode> jumpInst = new HashSet<>(Arrays.asList(
             IRInstruction.OpCode.BREQ,
             IRInstruction.OpCode.BRNEQ,
@@ -31,6 +19,29 @@ public class CFG {
             IRInstruction.OpCode.BRGEQ
 
         ));
+
+        // Build CFG for each function
+        for (IRFunction function : program.functions) {
+            System.out.println("=== CFG for function: " + function.name + " ===");
+            //buildCFG(function, jumpInst);
+            mark(function, jumpInst);
+            System.out.println();
+        }
+    }
+
+    static void buildCFG(IRFunction function, Set<IRInstruction.OpCode> jumpInst) {
+        int n = function.instructions.size();
+        int numNodes = 0;
+        List<Integer> startLNs = new ArrayList<>();
+        List<Integer> endLNs = new ArrayList<>();
+        // Set<IRInstruction.OpCode> jumpInst = new HashSet<>(Arrays.asList(
+        //     IRInstruction.OpCode.BREQ,
+        //     IRInstruction.OpCode.BRNEQ,
+        //     IRInstruction.OpCode.BRLT,
+        //     IRInstruction.OpCode.BRGT,
+        //     IRInstruction.OpCode.BRGEQ
+
+        // ));
 
         
         for (int i = 0; i < n ; i++) {
@@ -127,6 +138,94 @@ public class CFG {
         System.out.println("================================");
         }
     }
+
+    static void mark(IRFunction function, Set<IRInstruction.OpCode> jumpInst) {
+
+        //build the lastwrite map- for everyt instruction write the last 
+        HashMap<String, IRInstruction> lastWrite = new HashMap<>(); //this stores all the operands that are written to and the inst that writes to them
+        Set<IRInstruction.OpCode> writeInst = new HashSet<>(Arrays.asList(
+            IRInstruction.OpCode.ASSIGN, IRInstruction.OpCode.ADD, IRInstruction.OpCode.SUB, IRInstruction.OpCode.MULT, IRInstruction.OpCode.DIV,
+            IRInstruction.OpCode.AND, IRInstruction.OpCode.OR, IRInstruction.OpCode.ARRAY_LOAD, IRInstruction.OpCode.CALLR
+        ));
+
+        for (IRInstruction inst : function.instructions) { //for each instruction
+            if (writeInst.contains(inst.opCode)) {
+                lastWrite.put(((IRVariableOperand) inst.operands[0]).getName(), inst); //var that is written too and the instruction
+            }
+        }
+        for (Map.Entry<String, IRInstruction> entry : lastWrite.entrySet()) {
+            System.out.println( entry.getKey() + "=> " + entry.getValue().opCode);
+        }
+        
+
+        Queue<IRInstruction> worklist = new LinkedList<>();
+
+
+        //init the worklist
+        for (int i = 0; i < function.instructions.size(); i++) {
+            IRInstruction inst = function.instructions.get(i);
+            inst.marked = false; //clear inst's marking
+        
+            if (jumpInst.contains(inst.opCode) || inst.opCode == IRInstruction.OpCode.GOTO || 
+            inst.opCode == IRInstruction.OpCode.RETURN || inst.opCode == IRInstruction.OpCode.CALL || inst.opCode == IRInstruction.OpCode.CALLR ||
+            inst.opCode == IRInstruction.OpCode.LABEL) {
+                inst.critical = true;
+                inst.marked = true;
+                worklist.add(inst); //add critical instructions to worklist
+            }
+        }
+
+        
+        
+        while (!worklist.isEmpty()) {
+            IRInstruction inst = worklist.poll();
+            IROperand x = null;
+            IROperand y = null;
+            if (jumpInst.contains(inst.opCode) ) { //branch instruction
+                x = inst.operands[1];
+                y = inst.operands[2];
+            } else if (inst.opCode == IRInstruction.OpCode.RETURN) {
+                x = inst.operands[0]; 
+                y = null;
+            } else if (inst.opCode == IRInstruction.OpCode.CALL || inst.opCode == IRInstruction.OpCode.CALLR) {
+                x = inst.operands[2];
+                y = null;
+            } 
+
+
+            //lastWrite <IROperand, IRInstruction>, x = operand
+            if (x != null) {
+                IRInstruction inst_prime = lastWrite.get(((IRVariableOperand) x).getName());
+                if (inst_prime != null && !inst_prime.marked) {
+                    inst_prime.marked = true;
+                    worklist.add(inst_prime);
+                }
+            }
+            if (y != null) {
+                IRInstruction inst_prime = lastWrite.get(((IRVariableOperand) y).getName());
+                if (inst_prime != null && !inst_prime.marked) {
+                    inst_prime.marked = true;
+                    worklist.add(inst_prime);
+                }
+            }            
+            //i have the operands, now i need to see where they are updated.
+            //i+=1;
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+    }
+
+    
 }
 
 
