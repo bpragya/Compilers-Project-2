@@ -36,20 +36,21 @@ public class CFG {
         for (int i = 0; i < n ; i++) {
         //for (IRInstruction instruction : function.instructions) {
             IRInstruction inst = function.instructions.get(i);
-            if (i == 0) {
-                //startLNs.add(inst.irLineNumber);
-                startLNs.add(i);
-            }
-            else if (inst.opCode == IRInstruction.OpCode.LABEL) { //labels are leader
-                //startLNs.append(inst.irLineNumber);
-                startLNs.add(i);
-            }
-            else if (jumpInst.contains(inst.opCode) || inst.opCode == IRInstruction.OpCode.GOTO) { //instruction after a jump instruction
-                if (i + 1 < n) {
-                    //startLNs.append(function.instructions.get(i + 1).irLineNumber); 
-                    startLNs.add(i+1);
+            if (!startLNs.contains(i)) { //not in the start list
+                if (i == 0) {
+                    //startLNs.add(inst.irLineNumber);
+                    startLNs.add(i);
                 }
-                
+                else if (inst.opCode == IRInstruction.OpCode.LABEL) { //labels are leader
+                    //startLNs.append(inst.irLineNumber);
+                    startLNs.add(i);
+                }
+                else if (jumpInst.contains(inst.opCode) || inst.opCode == IRInstruction.OpCode.GOTO) { //instruction after a jump instruction
+                    if (i + 1 < n) {
+                        //startLNs.append(function.instructions.get(i + 1).irLineNumber); 
+                        startLNs.add(i+1);
+                    }  
+                }
             }
 
         }
@@ -117,14 +118,16 @@ public class CFG {
             System.out.println("Block " + i);
             System.out.println("Beginning Instruction " + startLNs.get(i));
             System.out.println("Ending Instruction " + endLNs.get(i));
-            System.out.println("Successor Blocks " + successors.get(i));
-            System.out.println("================================");
+            for (int j = startLNs.get(i); j <= endLNs.get(i); j++) {
+                System.out.println("Instruction " + function.instructions.get(j).opCode + 
+                Arrays.toString(function.instructions.get(j).operands));
+            }
+        
+        System.out.println("Successor Blocks " + successors.get(i));
+        System.out.println("================================");
         }
-
-
-        
-
-        
-
     }
 }
+
+
+        
