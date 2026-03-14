@@ -1,6 +1,7 @@
 import ir.*;
 import ir.operand.*;
 
+import java.io.PrintStream;
 import java.util.*;
 
 public class CFG {
@@ -20,13 +21,16 @@ public class CFG {
 
         ));
 
-        // Build CFG for each function
+        // Mark live instructions for each function, then sweep dead ones
         for (IRFunction function : program.functions) {
-            System.out.println("=== CFG for function: " + function.name + " ===");
-            //buildCFG(function, jumpInst);
             mark(function, jumpInst);
-            System.out.println();
+            
+            function.instructions.removeIf(inst -> !inst.marked);
         }
+
+        // Write optimized IR to output file
+        IRPrinter filePrinter = new IRPrinter(new PrintStream(args[1]));
+        filePrinter.printProgram(program);
     }
 
     static void buildCFG(IRFunction function, Set<IRInstruction.OpCode> jumpInst) {
@@ -189,13 +193,9 @@ public class CFG {
             }
         }
 
-        //List<IRInstruction> markedList = ArrayList<>();
-        for (IRInstruction inst : function.instructions) {
-            if (inst.marked == true) {
-                System.out.println(inst.opCode.toString() + " " + java.util.Arrays.toString(inst.operands) + " (line " + inst.irLineNumber + ")");
-            }
-        }
     }
+
+
 }
 
 

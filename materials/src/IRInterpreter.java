@@ -128,7 +128,8 @@ public class IRInterpreter {
     public void run() throws IRException {
         // Add an entry call to main
         IRFunctionOperand mainFunctionOperand = new IRFunctionOperand("main", null);
-        IRInstruction entryCall = new IRInstruction(IRInstruction.OpCode.CALL, new IROperand[]{mainFunctionOperand}, -1);
+        //IRInstruction entryCall = new IRInstruction(IRInstruction.OpCode.CALL, new IROperand[]{mainFunctionOperand}, -1);
+        IRInstruction entryCall = new IRInstruction(IRInstruction.OpCode.CALL, new IROperand[]{mainFunctionOperand}, -1, false, false);//pragya
         ArrayList<IRInstruction> entryInstList = new ArrayList<>();
         entryInstList.add(entryCall);
         pc = new ProgramCounter();
