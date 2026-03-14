@@ -153,9 +153,9 @@ public class CFG {
                 lastWrite.put(((IRVariableOperand) inst.operands[0]).getName(), inst); //var that is written too and the instruction
             }
         }
-        for (Map.Entry<String, IRInstruction> entry : lastWrite.entrySet()) {
-            System.out.println( entry.getKey() + "=> " + entry.getValue().opCode);
-        }
+        // for (Map.Entry<String, IRInstruction> entry : lastWrite.entrySet()) {
+        //     System.out.println( entry.getKey() + "=> " + entry.getValue().opCode);
+        // }
         
 
         Queue<IRInstruction> worklist = new LinkedList<>();
@@ -176,56 +176,26 @@ public class CFG {
         }
 
         
-        
         while (!worklist.isEmpty()) {
             IRInstruction inst = worklist.poll();
-            IROperand x = null;
-            IROperand y = null;
-            if (jumpInst.contains(inst.opCode) ) { //branch instruction
-                x = inst.operands[1];
-                y = inst.operands[2];
-            } else if (inst.opCode == IRInstruction.OpCode.RETURN) {
-                x = inst.operands[0]; 
-                y = null;
-            } else if (inst.opCode == IRInstruction.OpCode.CALL || inst.opCode == IRInstruction.OpCode.CALLR) {
-                x = inst.operands[2];
-                y = null;
-            } 
-
-
-            //lastWrite <IROperand, IRInstruction>, x = operand
-            if (x != null) {
-                IRInstruction inst_prime = lastWrite.get(((IRVariableOperand) x).getName());
-                if (inst_prime != null && !inst_prime.marked) {
-                    inst_prime.marked = true;
-                    worklist.add(inst_prime);
+            for (int i = 0; i < inst.operands.length; i++) {
+                if (inst.operands[i] instanceof IRVariableOperand) {
+                    IRInstruction inst_prime = lastWrite.get(((IRVariableOperand) inst.operands[i]).getName());
+                    if (inst_prime != null && !inst_prime.marked) {
+                        inst_prime.marked = true;
+                        worklist.add(inst_prime);
+                    }
                 }
             }
-            if (y != null) {
-                IRInstruction inst_prime = lastWrite.get(((IRVariableOperand) y).getName());
-                if (inst_prime != null && !inst_prime.marked) {
-                    inst_prime.marked = true;
-                    worklist.add(inst_prime);
-                }
-            }            
-            //i have the operands, now i need to see where they are updated.
-            //i+=1;
         }
 
-
-
-
-
-
-
-
-
-
-
-
+        //List<IRInstruction> markedList = ArrayList<>();
+        for (IRInstruction inst : function.instructions) {
+            if (inst.marked == true) {
+                System.out.println(inst.opCode.toString() + " " + java.util.Arrays.toString(inst.operands) + " (line " + inst.irLineNumber + ")");
+            }
+        }
     }
-
-    
 }
 
 
