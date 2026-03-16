@@ -34,8 +34,8 @@ public class BasicBlock {
    * @return the label name, or {@code null} if this block has no leading label
    */
   public String getLabel() {
-    if (!instructions.isEmpty() && instructions.getFirst().opCode == IRInstruction.OpCode.LABEL) {
-      return ((IRLabelOperand) instructions.getFirst().operands[0]).getName();
+    if (!instructions.isEmpty() && instructions.get(0).opCode == IRInstruction.OpCode.LABEL) {
+      return ((IRLabelOperand) instructions.get(0).operands[0]).getName();
     }
     return null;
   }

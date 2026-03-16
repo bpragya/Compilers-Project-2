@@ -20,7 +20,7 @@ public class CFG {
    * @return the entry {@link BasicBlock}
    */
   public BasicBlock entry() {
-    return blocks.getFirst();
+    return blocks.get(0);
   }
 
   /**

@@ -56,7 +56,7 @@ public class CFGBuilder {
       if (block.instructions.isEmpty())
         continue;
 
-      IRInstruction last = block.instructions.getLast();
+      IRInstruction last = block.instructions.get(block.instructions.size() - 1);
       BasicBlock next = (i + 1 < blocks.size()) ? blocks.get(i + 1) : null;
 
       if (Helpers.BRANCH_OPCODES.contains(last.opCode)) {

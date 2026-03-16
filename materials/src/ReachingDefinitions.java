@@ -116,7 +116,8 @@ public class ReachingDefinitions {
     HashSet<BasicBlock> visited = new HashSet<>();
     List<BasicBlock> postOrder = new ArrayList<>();
     dfs(cfg.entry(), visited, postOrder);
-    return postOrder.reversed();
+    Collections.reverse(postOrder);
+    return postOrder;
   }
 
   /**
