@@ -18,7 +18,8 @@ public class BasicBlock {
   }
 
   /**
-   * Returns this block's label if its first instruction is a {@code LABEL}, otherwise {@code null}.
+   * Returns this block's label if its first instruction is a {@code LABEL},
+   * otherwise {@code null}.
    *
    * @return the label name, or {@code null} if this block has no leading label
    */
@@ -27,13 +28,14 @@ public class BasicBlock {
   }
 
   /**
-   * Returns this block's label if its first instruction is a {@code LABEL}, otherwise {@code null}.
+   * Returns this block's label if its first instruction is a {@code LABEL},
+   * otherwise {@code null}.
    *
    * @return the label name, or {@code null} if this block has no leading label
    */
   public String getLabel() {
     if (!instructions.isEmpty() && instructions.getFirst().opCode == IRInstruction.OpCode.LABEL) {
-      return ((IRLabelOperand)instructions.getFirst().operands[0]).getName();
+      return ((IRLabelOperand) instructions.getFirst().operands[0]).getName();
     }
     return null;
   }
