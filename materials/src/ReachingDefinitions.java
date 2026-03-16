@@ -75,13 +75,7 @@ public class ReachingDefinitions {
         for (IRInstruction inst : block.instructions) {
             if (Helpers.defines(inst)) {
                 String variable = Helpers.defVar(inst);
-                Set<IRInstruction> toRemove = new HashSet<>();
-                for (IRInstruction d : gen) {
-                    if (Helpers.defVar(d).equals(variable)) {
-                        toRemove.add(d);
-                    }
-                }
-                gen.removeAll(toRemove);
+                gen.removeIf(d -> Helpers.defVar(d).equals(variable));
                 gen.add(inst);
             }
         }

@@ -3,9 +3,19 @@ import ir.IRInstruction;
 import ir.IRProgram;
 import ir.IRReader;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 
 public class Main {
+
+    // Expected instruction counts per function after optimization
+    private static final Map<String, Integer> EXPECTED = new LinkedHashMap<>();
+    static {
+        EXPECTED.put("fib",  11);
+        EXPECTED.put("main",  5);
+    }
+
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
             System.err.println("Usage: Main <path-to-ir-file>");
@@ -13,68 +23,36 @@ public class Main {
         }
 
         IRProgram program = new IRReader().parseIRFile(args[0]);
-        CFGBuilder builder = new CFGBuilder();
+
+        // Snapshot instruction counts before optimization
+        Map<String, Integer> before = new LinkedHashMap<>();
+        for (IRFunction fn : program.functions) {
+            before.put(fn.name, fn.instructions.size());
+        }
+
+        new IROptimizer().optimize(program);
+
+        // Print results and verify against expected
+        System.out.println("=== Optimizer Test ===\n");
+        boolean allPassed = true;
 
         for (IRFunction fn : program.functions) {
-            System.out.println("=== Function: " + fn.name + " ===");
-            CFG cfg = builder.buildCFG(fn);
+            int countBefore = before.get(fn.name);
+            int countAfter  = fn.instructions.size();
+            Integer expected = EXPECTED.get(fn.name);
 
-            printCFG(cfg);
+            System.out.println("Function: " + fn.name);
+            System.out.println("  Before : " + countBefore + " instructions");
+            System.out.println("  After  : " + countAfter  + " instructions");
 
-            ReachingDefinitions rd = new ReachingDefinitions(cfg);
-            rd.run(cfg);
-            printReachingDefinitions(cfg, rd);
-        }
-    }
-
-    private static void printCFG(CFG cfg) {
-        System.out.println("  -- CFG --");
-        for (BasicBlock block : cfg.getBlocks()) {
-            System.out.println("  Block " + block.getId() + ":");
-
-            for (IRInstruction inst : block.instructions) {
-                System.out.println("    [line " + inst.irLineNumber + "] "
-                        + inst.opCode + " " + operandsToString(inst));
+            if (expected != null) {
+                boolean passed = countAfter == expected;
+                System.out.println("  Expected: " + expected + "  [" + (passed ? "PASS" : "FAIL") + "]");
+                if (!passed) allPassed = false;
             }
-
-            StringBuilder succs = new StringBuilder("    -> successors:   [");
-            for (BasicBlock s : block.successors) succs.append(s.getId()).append(" ");
-            System.out.println(succs.toString().stripTrailing() + "]");
-
-            StringBuilder preds = new StringBuilder("    <- predecessors: [");
-            for (BasicBlock p : block.predecessors) preds.append(p.getId()).append(" ");
-            System.out.println(preds.toString().stripTrailing() + "]");
-
             System.out.println();
         }
-    }
 
-    private static void printReachingDefinitions(CFG cfg, ReachingDefinitions rd) {
-        System.out.println("  -- Reaching Definitions --");
-        for (BasicBlock block : cfg.getBlocks()) {
-            System.out.println("  Block " + block.getId() + ":");
-            printDefSet("IN ", rd.inSet.get(block));
-            printDefSet("OUT", rd.outSet.get(block));
-            System.out.println();
-        }
-    }
-
-    private static void printDefSet(String label, Set<IRInstruction> defs) {
-        StringBuilder sb = new StringBuilder("    " + label + ": [");
-        for (IRInstruction d : defs) {
-            sb.append("(line ").append(d.irLineNumber).append(" ")
-              .append(d.opCode).append(" ").append(operandsToString(d)).append(") ");
-        }
-        System.out.println(sb.toString().stripTrailing() + "]");
-    }
-
-    private static String operandsToString(IRInstruction inst) {
-        if (inst.operands == null) return "";
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < inst.operands.length; i++) {
-            if (i > 0) sb.append(", ");
-            sb.append(inst.operands[i]);
-        }
-        return sb.toString();
+        System.out.println("Result: " + (allPassed ? "ALL TESTS PASSED" : "SOME TESTS FAILED"));
     }
 }

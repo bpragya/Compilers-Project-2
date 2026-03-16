@@ -3,6 +3,8 @@ import ir.IRInstruction.OpCode;
 import ir.operand.IRLabelOperand;
 import ir.operand.IRVariableOperand;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 public class Helpers {
@@ -46,5 +48,35 @@ public class Helpers {
      */
     public static String targetLabel(IRInstruction inst) {
         return ((IRLabelOperand) inst.operands[0]).getName();
+    }
+
+    /**
+     * Returns all of the {@link IRVariableOperand} uses (or RHS reads) within {@code inst},
+     * without including the LHS desination operand and any label or function operands.
+     * It returns an empty list for gotos and label instructions (since they don't utilize variables).
+     *
+     * @param inst the instruction to extract variable uses from
+     * @return a list of variable operands read by {@code inst}
+     */
+    public static List<IRVariableOperand> uses(IRInstruction inst) {
+        List<IRVariableOperand> result = new ArrayList<>();
+
+        if (inst.opCode == OpCode.GOTO || inst.opCode == OpCode.LABEL) {
+            return result;
+        }
+
+        int startIndex = 0;
+        if (inst.opCode == OpCode.CALLR) {
+            startIndex = 2;
+        } else if (defines(inst) || inst.opCode == OpCode.CALL || Helpers.BRANCH_OPCODES.contains(inst.opCode)) {
+            startIndex = 1;
+        }
+
+        for (int i = startIndex; i < inst.operands.length; i++) {
+            if (inst.operands[i] instanceof IRVariableOperand) {
+                result.add((IRVariableOperand) inst.operands[i]);
+            }
+        }
+        return result;
     }
 }
