@@ -1,6 +1,8 @@
 import ir.IRInstruction;
 import ir.IRInstruction.OpCode;
+import ir.datatype.IRArrayType;
 import ir.operand.IRLabelOperand;
+import ir.operand.IROperand;
 import ir.operand.IRVariableOperand;
 
 import java.util.ArrayList;
@@ -20,17 +22,33 @@ public class Helpers {
    * as an {@link IRVariableOperand}.
    */
   public static boolean defines(IRInstruction inst) {
-    return (inst.opCode == OpCode.ASSIGN
-        || inst.opCode == OpCode.ADD
+
+    if (inst.operands.length <= 0) {
+      return false;
+    }
+
+    IROperand destOp = inst.operands[0];
+
+    if (!(destOp instanceof IRVariableOperand)) {
+      return false; // not a var
+    }
+
+    if (((IRVariableOperand) destOp).type instanceof IRArrayType) {
+      return false; // not a var part 2.
+    }
+
+    if (inst.opCode == OpCode.ASSIGN) {
+      return inst.operands.length == 2;
+    }
+
+    return (inst.opCode == OpCode.ADD
         || inst.opCode == OpCode.SUB
         || inst.opCode == OpCode.MULT
         || inst.opCode == OpCode.DIV
         || inst.opCode == OpCode.AND
         || inst.opCode == OpCode.OR
         || inst.opCode == OpCode.CALLR
-        || inst.opCode == OpCode.ARRAY_LOAD)
-        && inst.operands.length > 0
-        && inst.operands[0] instanceof IRVariableOperand;
+        || inst.opCode == OpCode.ARRAY_LOAD);
   }
 
   /**
