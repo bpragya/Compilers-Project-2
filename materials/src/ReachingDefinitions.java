@@ -11,18 +11,7 @@ public class ReachingDefinitions {
     this.inSet = new HashMap<>();
     this.outSet = new HashMap<>();
     this.allDefinitions = new HashMap<>();
-
-    for (BasicBlock block : cfg.getBlocks()) {
-      for (IRInstruction instr : block.instructions) {
-        if (Helpers.defines(instr)) {
-          String variable = Helpers.defVar(instr);
-          if (!allDefinitions.containsKey(variable)) {
-            allDefinitions.put(variable, new HashSet<>());
-          }
-          allDefinitions.get(variable).add(instr);
-        }
-      }
-    }
+    updateDefinitions(cfg);
   }
 
   /**
@@ -32,6 +21,10 @@ public class ReachingDefinitions {
    * @param cfg the control flow graph to analyze
    */
   public void run(CFG cfg) {
+    updateDefinitions(cfg);
+    // new "truncated" defs just dropped
+    inSet.clear();
+    outSet.clear();
     // Every Basic Block gets its own IN/OUT set
     for (BasicBlock block : cfg.getBlocks()) {
       inSet.put(block, new HashSet<IRInstruction>());
@@ -58,6 +51,28 @@ public class ReachingDefinitions {
         if (!newOut.equals(outSet.get(block))) {
           outSet.put(block, newOut);
           changed = true;
+        }
+      }
+    }
+  }
+
+  /**
+   * Computes definitions through the CFG (writes)
+   * so that we have know which ones are still relevant
+   *
+   * @param cfg the control-flow graph to update definitions for
+   */
+  public void updateDefinitions(CFG cfg) {
+    allDefinitions.clear();
+
+    for (BasicBlock block : cfg.getBlocks()) {
+      for (IRInstruction instr : block.instructions) {
+        if (Helpers.defines(instr)) {
+          String variable = Helpers.defVar(instr);
+          if (!allDefinitions.containsKey(variable)) {
+            allDefinitions.put(variable, new HashSet<>());
+          }
+          allDefinitions.get(variable).add(instr);
         }
       }
     }
@@ -95,9 +110,12 @@ public class ReachingDefinitions {
     for (IRInstruction inst : block.instructions) {
       if (Helpers.defines(inst)) {
         String variable = Helpers.defVar(inst);
-        for (IRInstruction d : allDefinitions.get(variable)) {
-          if (!blockInstructSet.contains(d)) {
-            kill.add(d);
+        Set<IRInstruction> defs = allDefinitions.get(variable);
+        if (defs != null) {
+          for (IRInstruction d : defs) {
+            if (!blockInstructSet.contains(d)) {
+              kill.add(d);
+            }
           }
         }
       }
