@@ -17,7 +17,7 @@ public class DeadCodeElimination {
    *
    * @param cfg the control flow graph to eliminate dead code from
    * @return {@code true} if any instruction was removed, {@code false} if the CFG
-   * is unchanged
+   *         is unchanged
    */
   public boolean run(CFG cfg) {
     rd.run(cfg);
@@ -47,11 +47,12 @@ public class DeadCodeElimination {
    *
    * @param cfg the control flow graph to scan for used definitions
    * @return the set of defining instructions whose results are consumed by at
-   * least one use
+   *         least one use
    */
   private Map<IRInstruction, Set<IRInstruction>> computeDependencies(CFG cfg) {
     Map<IRInstruction, Set<IRInstruction>> depMap = new HashMap<>();
-    // this is a map of an instruction to the instructions which define the USED operands of said instruction
+    // this is a map of an instruction to the instructions which define the USED
+    // operands of said instruction
     for (BasicBlock block : cfg.getBlocks()) {
       Set<IRInstruction> live = new HashSet<>(rd.inSet.get(block));
 
@@ -82,7 +83,17 @@ public class DeadCodeElimination {
     return depMap;
   }
 
-
+  /**
+   * Returns the set of live instructions in {@code cfg} using a worklist
+   * algorithm.
+   * Non-removable instructions are seeded as live; their dependencies (via
+   * {@code defMap})
+   * are marked live until a fixed point is reached.
+   *
+   * @param cfg    the control-flow graph to analyze
+   * @param defMap map from each instruction to the definitions it depends on
+   * @return the set of live (non-dead) instructions
+   */
   private Set<IRInstruction> markLiveInstructions(CFG cfg, Map<IRInstruction, Set<IRInstruction>> defMap) {
     Set<IRInstruction> liveInstructions = new HashSet<>();
 
@@ -90,7 +101,8 @@ public class DeadCodeElimination {
 
     for (BasicBlock block : cfg.getBlocks()) {
       for (IRInstruction inst : block.instructions) {
-        if (!(Helpers.defines(inst) && inst.opCode != IRInstruction.OpCode.CALLR)) { // if the instruction is NOT removable!
+        if (!(Helpers.defines(inst) && inst.opCode != IRInstruction.OpCode.CALLR)) { // if the instruction is NOT
+                                                                                     // removable!
           if (!liveInstructions.contains(inst)) {
             liveInstructions.add(inst);
             worklist.add(inst);
