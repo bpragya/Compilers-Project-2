@@ -36,21 +36,19 @@ public class InstructionSelection {
                 if (src1 instanceof IRConstantOperand) {
                     tmp1 = "$tmp" + count; //?
 
-                    emit ("li " tmp1 + ", " + src1);
+                    emit ("li " + tmp1 + ", " + src1);
                     count+=1
                 } 
                 if (src2 instanceof IRConstantOperand) {
                     tmp2 = "$tmp" + count; //?
 
-                    emit ("li $" + tmp2 + ", " + src2);
+                    emit ("li " + tmp2 + ", " + src2);
                     count+=1
                 }
 
                 //now constants are in registers
 
                 emit ("add $" + dest + ", " + tmp1, ", " + tmp2);
-
-
 
 
             }
@@ -192,15 +190,16 @@ public class InstructionSelection {
                 emit ("or $" + dest + ", " + tmp1, ", " + tmp2);
 
 
+
             }
-            case instr.GOTO -> {
+            case GOTO -> {
                 IROperand labelName = instr.operands[0];
                 emit ("j " + labelName)
 
             }
 
             //the last two operands will be the same type
-            case instr.BREQ -> {
+            case BREQ -> {
                 IROperand labelName = instr.operands[0];
                 IROperand src1 = instr.operands[1];
                 IROperand src2 = instr.operands[2];
@@ -229,7 +228,7 @@ public class InstructionSelection {
                 
 
             }
-            case instr.BRNEQ -> {
+            case BRNEQ -> {
                 IROperand labelName = instr.operands[0];
                 IROperand src1 = instr.operands[1];
                 IROperand src2 = instr.operands[2];
@@ -257,7 +256,7 @@ public class InstructionSelection {
                 
 
             }
-            case instr.BRLT -> {
+            case BRLT -> {
                 IROperand labelName = instr.operands[0];
                 IROperand src1 = instr.operands[1];
                 IROperand src2 = instr.operands[2];
@@ -285,7 +284,7 @@ public class InstructionSelection {
                 
 
             }
-            case instr.BRGT -> {
+            case BRGT -> {
                 IROperand labelName = instr.operands[0];
                 IROperand src1 = instr.operands[1];
                 IROperand src2 = instr.operands[2];
@@ -314,7 +313,7 @@ public class InstructionSelection {
                 
 
             }
-            case instr.BRGEQ -> {
+            case BRGEQ -> {
                 IROperand labelName = instr.operands[0];
                 IROperand src1 = instr.operands[1];
                 IROperand src2 = instr.operands[2];
@@ -343,22 +342,88 @@ public class InstructionSelection {
                 
 
             }
-            case instr.RETURN ->{
+            case RETURN ->{  //always called with an arg
                 IROperand src = instr.operands[0];
 
+                //put src into a register
+
+                String raReg = "$" + src;
+
+                if (src instanceof IRConstantOperand) {
+                    raReg = "$tmp" + count;
+                    count+=1
+                    emit ("li " + raReg + ", " + src);
+                }
+                //puts the return value in v0
+                emit("move $v0 ," + raReg);
+
+                //jumps back to $ra
+                emit("jr $ra");
+
 
             }
-            case instr.CALL ->{
-                IROperand func = instr.operands[0]
+            case CALL ->{
+                IROperand func = instr.operands[0];
 
                 //how to get the args? 1->n
+                for (i = 1; i < inst.operands.length; i++) {
+                    //pushing the args onto the stack
+
+                    String argReg = "$" + inst.operands[i]; #value is not in aregister yet
+
+                    if (instr.operands[i] instanceof IRConstantOperand) {
+                        argReg = "$tmp" + count
+                        count+=1
+
+                        //load the value in the register
+                        emit ("li " + argReg + ", " + inst.operands[i]);
+                    }
+
+                    //push value onto stack - which order??
+                    emit("addi $sp, $sp, -4");
+                    emit("sw " + argReg + ", 0($sp)");
+
+                }
+
+                //jump to the function
+                emit("jal " + func); //saves the ra
+
+                //pop all the values
+                emit("addi $sp, $sp, " + (4 * (inst.operands.length - 1)))
 
             }
-            case instr.CALLR -> {
+            case CALLR -> {
                 IROperand dest = instr.operands[0]
                 IROperand func = instr.operands[1]
 
                 //how to get the args 2->n
+                //how to get the args? 1->n
+                for (i = 2; i < instr.operands.length; i++) {
+                    //pushing the args onto the stack
+
+                    String argReg = "$" + inst.operands[i]
+
+                    if (inst.operands[i] instanceof IRConstantOperand) {
+                        argReg = "$tmp" + count
+                        count+=1
+
+                        //load the value in the register
+                        emit ("li " + argReg + ", " + inst.operands[i]);
+                    }
+
+                    //push value onto stack - which order??
+                    emit("addi $sp, $sp, -4");
+                    emit("sw " + argReg + ", 0($sp)");
+
+                }
+
+                //jump to the function
+                emit("jal " + func);
+
+                //store the return value ($v0) in dest
+                emit("move $" + dest + ", $v0");
+                emit("addi $sp, $sp, " + (4 * (inst.operands.length - 2)))
+
 
             }
             case instr.ARRAY_STORE -> {
