@@ -11,4 +11,8 @@ public class IRLabelOperand extends IROperand {
     public String getName() {
         return value;
     }
+
+    public void prefix(String p) {
+        value = p + value;
+    }
 }
