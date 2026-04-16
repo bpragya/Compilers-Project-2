@@ -5,9 +5,13 @@ import ir.IRProgram;
 import ir.IRReader;
 import ir.operand.IRLabelOperand;
 import ir.operand.IROperand;
+import main.java.mips.MIPSInstruction;
+import main.java.mips.MIPSProgram;
 
 import java.io.FileNotFoundException;
 import java.io.PrintStream;
+import java.util.HashMap;
+import java.util.Map;
 
 public class Main {
   public static void main(String[] args) throws FileNotFoundException, IRException {
@@ -30,16 +34,41 @@ public class Main {
     }
 
     PrintStream out = new PrintStream(args[1]);
-    InstructionSelection is = new InstructionSelection(out);
 
     out.println("  .text");
     out.println("  .globl main");
 
     for (IRFunction func : program.functions) {
-      out.println(func.name + ":");
+      InstructionSelection is = new InstructionSelection(out);
+
       for (IRInstruction instr : func.instructions) {
         is.generateInstructions(instr);
       }
+
+      Map<Integer, MIPSInstruction> instructions = is.getInstructions();
+      Map<Integer, Integer> data = new HashMap<>();
+      Map<String, Integer> labels = is.getLabels();
+      labels.put(func.name, 0); // function entry label points to first instruction
+
+      MIPSProgram mipsProg = new MIPSProgram(instructions, data, labels);
+
+      // debug: print instructions and labels
+      System.out.println("=== " + func.name + " ===");
+      System.out.println("Labels: " + mipsProg.labels);
+      for (Map.Entry<Integer, MIPSInstruction> entry : mipsProg.instructions.entrySet()) {
+        System.out.println(entry.getKey() + ": " + entry.getValue());
+      }
     }
+
   }
 }
+
+
+
+
+
+
+
+
+
+  
