@@ -34,7 +34,7 @@ public class InstructionSelection {
         return labels;
     }
 
-    private void emit(MIPSInstruction instr) {
+    public void emit(MIPSInstruction instr) {
         instructions.put(mipsIdx, instr);
         mipsIdx+=1;
         out.println("   " + instr);
