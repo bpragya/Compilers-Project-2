@@ -10,7 +10,9 @@ import main.java.mips.MIPSProgram;
 
 import java.io.FileNotFoundException;
 import java.io.PrintStream;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class Main {
@@ -39,6 +41,7 @@ public class Main {
     out.println("  .globl main");
 
     for (IRFunction func : program.functions) {
+      out.println(func.name + ":");
       InstructionSelection is = new InstructionSelection(out);
 
       for (IRInstruction instr : func.instructions) {
@@ -59,6 +62,9 @@ public class Main {
         System.out.println(entry.getKey() + ": " + entry.getValue());
       }
     }
+
+    
+
 
   }
 }

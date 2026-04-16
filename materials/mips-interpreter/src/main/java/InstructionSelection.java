@@ -35,8 +35,9 @@ public class InstructionSelection {
     }
 
     private void emit(MIPSInstruction instr) {
-        instructions.put(mipsIdx ,instr);
+        instructions.put(mipsIdx, instr);
         mipsIdx+=1;
+        out.println("   " + instr);
 
     } 
 
@@ -54,12 +55,12 @@ public class InstructionSelection {
                     //move from one register to another
                     //emit("move $" + dest + ", " + "$" + src); 
                     emit(new MIPSInstruction(MIPSOp.MOVE, null, 
-                    new Register(dest.toString(), true), new Register(src.toString(), true)));
+                    new Register("$" + dest.toString(), true), new Register("$" + src.toString(), true)));
 
                 } else /*if (src instanceof IRConstantOperand)*/ {
                     emit(
                         new MIPSInstruction(MIPSOp.LI, null,
-                        new Register(dest.toString(), true), new Imm(src.toString(),"DEC"))
+                        new Register("$" + dest.toString(), true), new Imm(src.toString(),"DEC"))
                     );
                     //emit("li $" + dest + ", " + src);
 
@@ -87,7 +88,7 @@ public class InstructionSelection {
                     //emit("addi $" + dest + ", " + tmp + ", " + src2);
                     emit(
                         new MIPSInstruction(MIPSOp.ADDI, null,
-                        new Register(dest.toString(), true),
+                        new Register("$" + dest.toString(), true),
                         new Register(tmp, true),
                         new Imm(src2.toString(), "DEC"))
 
@@ -97,8 +98,8 @@ public class InstructionSelection {
                     //emit("addi $" + dest + ", $" + src1 + ", " + src2);
                     emit(
                         new MIPSInstruction(MIPSOp.ADDI, null,
-                        new Register(dest.toString(), true),
-                        new Register(src1.toString(), true),
+                        new Register("$" + dest.toString(), true),
+                        new Register("$" + src1.toString(), true),
                         new Imm(src2.toString(), "DEC")
                         )
                     );
@@ -106,17 +107,17 @@ public class InstructionSelection {
                     //emit("addi $" + dest + ", $" + src2 + ", " + src1);
                     emit(
                         new MIPSInstruction(MIPSOp.ADDI, null,
-                        new Register(dest.toString(), true),
-                        new Register(src2.toString(), true),
+                        new Register("$" + dest.toString(), true),
+                        new Register("$" + src2.toString(), true),
                         new Imm(src1.toString(), "DEC"))
                     );
                 } else { //both are vars
                     //emit("add $" + dest + ", $" + src1 + ", $" + src2); //prints out MIPS instruction, write a new function that
                     emit(
                         new MIPSInstruction(MIPSOp.ADD, null,
-                        new Register(dest.toString(), true),
-                        new Register(src1.toString(), true),
-                        new Register(src2.toString(), true))
+                        new Register("$" + dest.toString(), true),
+                        new Register("$" + src1.toString(), true),
+                        new Register("$" + src2.toString(), true))
                     );
                 }
             }
@@ -131,14 +132,14 @@ public class InstructionSelection {
 
                 if (!src1const && !src2const) { //both vars
                     emit(new MIPSInstruction(MIPSOp.SUB, null,
-                        new Register(dest.toString(), true),
-                        new Register(src1.toString(), true),
-                        new Register(src2.toString(), true)));
+                        new Register("$" + dest.toString(), true),
+                        new Register("$" + src1.toString(), true),
+                        new Register("$" + src2.toString(), true)));
                 } else if (!src1const) { //src1 var, src2 const
                     
                     emit(new MIPSInstruction(MIPSOp.ADDI, null,
-                        new Register(dest.toString(), true),
-                        new Register(src1.toString(), true),
+                        new Register("$" + dest.toString(), true),
+                        new Register("$" + src1.toString(), true),
                         new Imm("-" + src2.toString(), "DEC")));
                 } else if (!src2const) {
                 
@@ -147,9 +148,9 @@ public class InstructionSelection {
                         new Register(tmp, true),
                         new Imm(src1.toString(), "DEC")));
                     emit(new MIPSInstruction(MIPSOp.SUB, null,
-                        new Register(dest.toString(), true),
+                        new Register("$" + dest.toString(), true),
                         new Register(tmp, true),
-                        new Register(src2.toString(), true)));
+                        new Register("$" + src2.toString(), true)));
                 } else {
                     
                     String tmp = "$tmp" + count++;
@@ -157,7 +158,7 @@ public class InstructionSelection {
                         new Register(tmp, true),
                         new Imm(src1.toString(), "DEC")));
                     emit(new MIPSInstruction(MIPSOp.ADDI, null,
-                        new Register(dest.toString(), true),
+                        new Register("$" + dest.toString(), true),
                         new Register(tmp, true),
                         new Imm("-" + src2.toString(), "DEC")));
                 }
@@ -182,7 +183,7 @@ public class InstructionSelection {
                         new Imm(src1.toString(), "DEC")));
                     r1 = new Register(tmp, true);
                 } else { //put in register if it is not a constant
-                    r1 = new Register(src1.toString(), true);
+                    r1 = new Register("$" + src1.toString(), true);
                 }
 
                 if (src2 instanceof IRConstantOperand) {
@@ -193,11 +194,11 @@ public class InstructionSelection {
                         new Imm(src2.toString(), "DEC")));
                     r2 = new Register(tmp, true);
                 } else {
-                    r2 = new Register(src2.toString(), true);
+                    r2 = new Register("$" + src2.toString(), true);
                 }
                 //emit("mult $" + dest + ", " + tmp1 + ", " + tmp2);
                 emit(new MIPSInstruction(MIPSOp.MUL, null,
-                    new Register(dest.toString(), true),
+                    new Register("$" + dest.toString(), true),
                     r1,
                     r2));
 
@@ -232,7 +233,7 @@ public class InstructionSelection {
                         new Imm(src1.toString(), "DEC")));
                     r1 = new Register(tmp, true);
                 } else {
-                    r1 = new Register(src1.toString(), true);
+                    r1 = new Register("$" + src1.toString(), true);
                 }
 
                 if (src2 instanceof IRConstantOperand) {
@@ -242,11 +243,11 @@ public class InstructionSelection {
                         new Imm(src2.toString(), "DEC")));
                     r2 = new Register(tmp, true);
                 } else {
-                    r2 = new Register(src2.toString(), true);
+                    r2 = new Register("$" + src2.toString(), true);
                 }
 
                 emit(new MIPSInstruction(MIPSOp.DIV, null,
-                    new Register(dest.toString(), true),
+                    new Register("$" + dest.toString(), true),
                     r1,
                     r2));
 
@@ -281,7 +282,7 @@ public class InstructionSelection {
                         new Imm(src1.toString(), "DEC")));
                     r1 = new Register(tmp, true);
                 } else {
-                    r1 = new Register(src1.toString(), true);
+                    r1 = new Register("$" + src1.toString(), true);
                 }
 
                 if (src2 instanceof IRConstantOperand) {
@@ -291,11 +292,11 @@ public class InstructionSelection {
                         new Imm(src2.toString(), "DEC")));
                     r2 = new Register(tmp, true);
                 } else {
-                    r2 = new Register(src2.toString(), true);
+                    r2 = new Register("$" + src2.toString(), true);
                 }
 
                 emit(new MIPSInstruction(MIPSOp.AND, null,
-                    new Register(dest.toString(), true),
+                    new Register("$" + dest.toString(), true),
                     r1,
                     r2));
 
@@ -330,7 +331,7 @@ public class InstructionSelection {
                         new Imm(src1.toString(), "DEC")));
                     r1 = new Register(tmp, true);
                 } else {
-                    r1 = new Register(src1.toString(), true);
+                    r1 = new Register("$" + src1.toString(), true);
                 }
 
                 if (src2 instanceof IRConstantOperand) {
@@ -340,11 +341,11 @@ public class InstructionSelection {
                         new Imm(src2.toString(), "DEC")));
                     r2 = new Register(tmp, true);
                 } else {
-                    r2 = new Register(src2.toString(), true);
+                    r2 = new Register("$" + src2.toString(), true);
                 }
 
                 emit(new MIPSInstruction(MIPSOp.OR, null,
-                    new Register(dest.toString(), true),
+                    new Register("$" + dest.toString(), true),
                     r1,
                     r2));
 
@@ -390,7 +391,7 @@ public class InstructionSelection {
                         new Imm(src1.toString(), "DEC")));
                     r1 = new Register(tmp, true);
                 } else {
-                    r1 = new Register(src1.toString(), true);
+                    r1 = new Register("$" + src1.toString(), true);
                 }
 
                 if (src2 instanceof IRConstantOperand) {
@@ -400,7 +401,7 @@ public class InstructionSelection {
                         new Imm(src2.toString(), "DEC")));
                     r2 = new Register(tmp, true);
                 } else {
-                    r2 = new Register(src2.toString(), true);
+                    r2 = new Register("$" + src2.toString(), true);
                 }
 
                 emit(new MIPSInstruction(MIPSOp.BEQ, null,
@@ -435,7 +436,7 @@ public class InstructionSelection {
                         new Imm(src1.toString(), "DEC")));
                     r1 = new Register(tmp, true);
                 } else {
-                    r1 = new Register(src1.toString(), true);
+                    r1 = new Register("$" + src1.toString(), true);
                 }
 
                 if (src2 instanceof IRConstantOperand) {
@@ -445,7 +446,7 @@ public class InstructionSelection {
                         new Imm(src2.toString(), "DEC")));
                     r2 = new Register(tmp, true);
                 } else {
-                    r2 = new Register(src2.toString(), true);
+                    r2 = new Register("$" + src2.toString(), true);
                 }
 
                 emit(new MIPSInstruction(MIPSOp.BNE, null,
@@ -479,7 +480,7 @@ public class InstructionSelection {
                         new Imm(src1.toString(), "DEC")));
                     r1 = new Register(tmp, true);
                 } else {
-                    r1 = new Register(src1.toString(), true);
+                    r1 = new Register("$" + src1.toString(), true);
                 }
 
                 if (src2 instanceof IRConstantOperand) {
@@ -489,7 +490,7 @@ public class InstructionSelection {
                         new Imm(src2.toString(), "DEC")));
                     r2 = new Register(tmp, true);
                 } else {
-                    r2 = new Register(src2.toString(), true);
+                    r2 = new Register("$" + src2.toString(), true);
                 }
 
                 emit(new MIPSInstruction(MIPSOp.BLT, null,
@@ -523,7 +524,7 @@ public class InstructionSelection {
                         new Imm(src1.toString(), "DEC")));
                     r1 = new Register(tmp, true);
                 } else {
-                    r1 = new Register(src1.toString(), true);
+                    r1 = new Register("$" + src1.toString(), true);
                 }
 
                 if (src2 instanceof IRConstantOperand) {
@@ -533,7 +534,7 @@ public class InstructionSelection {
                         new Imm(src2.toString(), "DEC")));
                     r2 = new Register(tmp, true);
                 } else {
-                    r2 = new Register(src2.toString(), true);
+                    r2 = new Register("$" + src2.toString(), true);
                 }
 
                 emit(new MIPSInstruction(MIPSOp.BGT, null,
@@ -567,7 +568,7 @@ public class InstructionSelection {
                         new Imm(src1.toString(), "DEC")));
                     r1 = new Register(tmp, true);
                 } else {
-                    r1 = new Register(src1.toString(), true);
+                    r1 = new Register("$" + src1.toString(), true);
                 }
 
                 if (src2 instanceof IRConstantOperand) {
@@ -577,7 +578,7 @@ public class InstructionSelection {
                         new Imm(src2.toString(), "DEC")));
                     r2 = new Register(tmp, true);
                 } else {
-                    r2 = new Register(src2.toString(), true);
+                    r2 = new Register("$" + src2.toString(), true);
                 }
 
                 emit(new MIPSInstruction(MIPSOp.BGE, null,
@@ -605,14 +606,14 @@ public class InstructionSelection {
                         new Imm(src.toString(), "DEC")));
                     r = new Register(tmp, true);
                 } else {
-                    r = new Register(src.toString(), true);
+                    r = new Register("$" + src.toString(), true);
                 }
 
                 emit(new MIPSInstruction(MIPSOp.MOVE, null,
                     new Register("v0", true), r)); //TODO: should this be virtual?
 
                 emit(new MIPSInstruction(MIPSOp.JR, null,
-                    new Register("ra", true))); //TODO: show this be virtual?
+                    new Register("$ra", true))); //TODO: show this be virtual?
 
             }
             case CALL -> {
@@ -631,7 +632,7 @@ public class InstructionSelection {
                 // emit("jal " + funcOp);
                 // emit("addi $sp, $sp, " + (4 * (instr.operands.length - 1)));
 
-                Register sp = new Register("sp", true); //TODO: should this be virtual?
+                Register sp = new Register("$sp", true); //TODO: should this be virtual?
 
                 for (int i = instr.operands.length - 1; i > 0; i--) { //pushing the args in reverse order
                     Register argReg;
@@ -642,7 +643,7 @@ public class InstructionSelection {
                             new Imm(instr.operands[i].toString(), "DEC")));
                         argReg = new Register(tmp, true);
                     } else {
-                        argReg = new Register(instr.operands[i].toString(), true);
+                        argReg = new Register("$" + instr.operands[i].toString(), true);
                     }
                     emit(new MIPSInstruction(MIPSOp.ADDI, null,
                         sp, sp, new Imm("-4", "DEC")));
@@ -675,7 +676,7 @@ public class InstructionSelection {
                 // emit("move $" + dest + ", $v0");
                 // emit("addi $sp, $sp, " + (4 * (instr.operands.length - 2)));
 
-                Register sp = new Register("sp", true); //TODO: should this be virtual?
+                Register sp = new Register("$sp", true); //TODO: should this be virtual?
 
                 for (int i = instr.operands.length - 1; i > 1; i--) { //pushing the args in reverse order
                     Register argReg;
@@ -686,7 +687,7 @@ public class InstructionSelection {
                             new Imm(instr.operands[i].toString(), "DEC")));
                         argReg = new Register(tmp, true);
                     } else {
-                        argReg = new Register(instr.operands[i].toString(), true);
+                        argReg = new Register("$" + instr.operands[i].toString(), true);
                     }
                     emit(new MIPSInstruction(MIPSOp.ADDI, null,
                         sp, sp, new Imm("-4", "DEC")));
@@ -698,8 +699,8 @@ public class InstructionSelection {
                     new Addr(funcOp.toString())));
 
                 emit(new MIPSInstruction(MIPSOp.MOVE, null,
-                    new Register(dest.toString(), true),
-                    new Register("v0", false)));
+                    new Register("$" + dest.toString(), true),
+                    new Register("$v0", false)));
 
                 emit(new MIPSInstruction(MIPSOp.ADDI, null,
                     sp, sp, new Imm(String.valueOf(4 * (instr.operands.length - 2)), "DEC")));
@@ -714,23 +715,23 @@ public class InstructionSelection {
                     int offset = 4 * Integer.parseInt(((IRConstantOperand) idx).getValueString());
                     // emit("sw $" + src + ", " + offset + "($" + arr + ")");
                     emit(new MIPSInstruction(MIPSOp.SW, null,
-                        new Register(src.toString(), true),
-                        new Addr(new Imm(String.valueOf(offset), "DEC"), new Register(arr.toString(), true))));
+                        new Register("$" + src.toString(), true),
+                        new Addr(new Imm(String.valueOf(offset), "DEC"), new Register("$" + arr.toString(), true))));
                 } else {
                     // emit("sll $" + idx + ", $" + idx + ", 2");
                     emit(new MIPSInstruction(MIPSOp.SLL, null,
-                        new Register(idx.toString(), true),
-                        new Register(idx.toString(), true),
+                        new Register("$" + idx.toString(), true),
+                        new Register("$" + idx.toString(), true),
                         new Imm("2", "DEC")));
                     // emit("add $" + idx + ", $" + arr + ", $" + idx);
                     emit(new MIPSInstruction(MIPSOp.ADD, null,
-                        new Register(idx.toString(), true),
-                        new Register(arr.toString(), true),
-                        new Register(idx.toString(), true)));
+                        new Register("$" + idx.toString(), true),
+                        new Register("$" + arr.toString(), true),
+                        new Register("$" + idx.toString(), true)));
                     // emit("sw $" + src + ", 0($" + idx + ")");
                     emit(new MIPSInstruction(MIPSOp.SW, null,
-                        new Register(src.toString(), true),
-                        new Addr(new Imm("0", "DEC"), new Register(idx.toString(), true))));
+                        new Register("$" + src.toString(), true),
+                        new Addr(new Imm("0", "DEC"), new Register("$" + idx.toString(), true))));
                 }
 
             }
@@ -743,23 +744,23 @@ public class InstructionSelection {
                     int offset = 4 * Integer.parseInt(((IRConstantOperand) idx).getValueString());
                     // emit("lw $" + dest + ", " + offset + "($" + arr + ")");
                     emit(new MIPSInstruction(MIPSOp.LW, null,
-                        new Register(dest.toString(), true),
-                        new Addr(new Imm(String.valueOf(offset), "DEC"), new Register(arr.toString(), true))));
+                        new Register("$" + dest.toString(), true),
+                        new Addr(new Imm(String.valueOf(offset), "DEC"), new Register("$" + arr.toString(), true))));
                 } else {
                     // emit("sll $" + idx + ", $" + idx + ", 2");
                     emit(new MIPSInstruction(MIPSOp.SLL, null,
-                        new Register(idx.toString(), true),
-                        new Register(idx.toString(), true),
+                        new Register("$" + idx.toString(), true),
+                        new Register("$" + idx.toString(), true),
                         new Imm("2", "DEC")));
                     // emit("add $" + idx + ", $" + arr + ", $" + idx);
                     emit(new MIPSInstruction(MIPSOp.ADD, null,
-                        new Register(idx.toString(), true),
-                        new Register(arr.toString(), true),
-                        new Register(idx.toString(), true)));
+                        new Register("$" + idx.toString(), true),
+                        new Register("$" + arr.toString(), true),
+                        new Register("$" + idx.toString(), true)));
                     // emit("lw $" + dest + ", 0($" + idx + ")");
                     emit(new MIPSInstruction(MIPSOp.LW, null,
-                        new Register(dest.toString(), true),
-                        new Addr(new Imm("0", "DEC"), new Register(idx.toString(), true))));
+                        new Register("$" + dest.toString(), true),
+                        new Addr(new Imm("0", "DEC"), new Register("$" + idx.toString(), true))));
                 }
 
 
@@ -768,6 +769,7 @@ public class InstructionSelection {
                 IROperand labelName = instr.operands[0];
                 // emit(labelName + ":");
                 labels.put(labelName.toString(), mipsIdx);
+                out.println("   " + labelName + ":");
             }
 
         }
