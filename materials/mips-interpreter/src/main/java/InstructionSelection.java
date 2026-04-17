@@ -610,10 +610,10 @@ public class InstructionSelection {
                 }
 
                 emit(new MIPSInstruction(MIPSOp.MOVE, null,
-                    new Register("v0", true), r)); //TODO: should this be virtual?
+                    new Register("v0", false), r)); //TODO: should this be virtual?
 
                 emit(new MIPSInstruction(MIPSOp.JR, null,
-                    new Register("$ra", true))); //TODO: show this be virtual?
+                    new Register("$ra", false))); //TODO: show this be virtual?
 
             }
             case CALL -> {
