@@ -467,21 +467,23 @@ public class InstructionSelection {
 
       }
       case RETURN -> {
-        IROperand src = instr.operands[0];
-        Register r;
+        if (instr.operands != null && instr.operands.length > 0) {
+          IROperand src = instr.operands[0];
+          Register r;
 
-        if (src instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src.toString(), "DEC")));
-          r = new Register(tmp, true);
-        } else {
-          r = new Register("$" + src.toString(), true);
+          if (src instanceof IRConstantOperand) {
+            String tmp = "$tmp" + count++;
+            emit(new MIPSInstruction(MIPSOp.LI, null,
+                new Register(tmp, true),
+                new Imm(src.toString(), "DEC")));
+            r = new Register(tmp, true);
+          } else {
+            r = new Register("$" + src.toString(), true);
+          }
+
+          emit(new MIPSInstruction(MIPSOp.MOVE, null,
+              new Register("$v0", false), r)); // TODO: should this be virtual?
         }
-
-        emit(new MIPSInstruction(MIPSOp.MOVE, null,
-            new Register("$v0", false), r)); // TODO: should this be virtual?
 
         emit(new MIPSInstruction(MIPSOp.JR, null,
             new Register("$ra", false))); // TODO: show this be virtual?
