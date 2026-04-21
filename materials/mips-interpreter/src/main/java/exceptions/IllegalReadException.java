@@ -1,4 +1,4 @@
-package main.java.exceptions;
+package exceptions;
 
 public class IllegalReadException extends RuntimeException {
     public IllegalReadException() {

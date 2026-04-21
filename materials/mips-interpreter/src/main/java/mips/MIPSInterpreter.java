@@ -1,4 +1,4 @@
-package main.java.mips;
+package mips;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -10,8 +10,8 @@ import java.io.IOException;
 
 import java.nio.ByteBuffer;
 
-import main.java.mips.operand.*;
-import main.java.exceptions.*;
+import mips.operand.*;
+import exceptions.*;
 
 public class MIPSInterpreter {
 

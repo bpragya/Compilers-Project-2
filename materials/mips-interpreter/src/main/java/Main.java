@@ -5,8 +5,8 @@ import ir.IRProgram;
 import ir.IRReader;
 import ir.operand.IRLabelOperand;
 import ir.operand.IROperand;
-import main.java.mips.MIPSInstruction;
-import main.java.mips.MIPSProgram;
+import mips.MIPSInstruction;
+import mips.MIPSProgram;
 
 import java.io.FileNotFoundException;
 import java.io.PrintStream;

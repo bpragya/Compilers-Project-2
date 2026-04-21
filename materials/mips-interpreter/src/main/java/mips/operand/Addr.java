@@ -1,4 +1,4 @@
-package main.java.mips.operand;
+package mips.operand;
 
 public class Addr extends MIPSOperand {
 

@@ -1,4 +1,4 @@
-package main.java.mips;
+package mips;
 
 import java.util.List;
 import java.util.Map;
