@@ -6,6 +6,7 @@ import ir.operand.*;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.*;
 
 public class IRInterpreter {
@@ -148,6 +149,10 @@ public class IRInterpreter {
         while (true) {
             IRInstruction instruction = pc.next();
             executeInstruction(instruction);
+            if (!stack.isEmpty() && stack.peek().varMap != null) {
+                System.err.println("[after] " + instruction.opCode + " " +
+                    Arrays.toString(instruction.operands) + " | vars: " + stack.peek().varMap);
+            }
 
             if (!pc.hasNext()) {
                 // Return from a procedure

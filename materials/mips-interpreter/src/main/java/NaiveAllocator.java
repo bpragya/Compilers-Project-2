@@ -15,12 +15,16 @@ import mips.MIPSProgram;
 
 public class NaiveAllocator{
 
-    public NaiveAllocator() {
-        //not sure what to do here?
-
-    }
-
     private PrintStream out;
+    private Map<Integer, MIPSInstruction> instructions;
+    private Map<String, Integer> labels;
+    private int mipsIdx = 0;
+
+    public NaiveAllocator(PrintStream out) {
+        this.out = out;
+        this.instructions = new HashMap<>();
+        this.labels = new HashMap<>();
+    }
     
 
     public Map<Integer, MIPSInstruction> getInstructions() {

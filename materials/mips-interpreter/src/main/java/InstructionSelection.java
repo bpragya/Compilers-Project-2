@@ -19,6 +19,7 @@ public class InstructionSelection {
     private Map<Integer, MIPSInstruction> instructions;
     private Map<String, Integer> labels;
     private int mipsIdx = 0;
+    private int addrTmpCounter = 0;
 
     public InstructionSelection(PrintStream out) {
         this.out = out;
@@ -680,20 +681,18 @@ public class InstructionSelection {
                         new Register("$" + src.toString(), true),
                         new Addr(new Imm(String.valueOf(offset), "DEC"), new Register("$" + arr.toString(), true))));
                 } else {
-                    // emit("sll $" + idx + ", $" + idx + ", 2");
+                    String addrTmp = "$__addr" + (addrTmpCounter++);
                     emit(new MIPSInstruction(MIPSOp.SLL, null,
-                        new Register("$" + idx.toString(), true),
+                        new Register(addrTmp, true),
                         new Register("$" + idx.toString(), true),
                         new Imm("2", "DEC")));
-                    // emit("add $" + idx + ", $" + arr + ", $" + idx);
                     emit(new MIPSInstruction(MIPSOp.ADD, null,
-                        new Register("$" + idx.toString(), true),
+                        new Register(addrTmp, true),
                         new Register("$" + arr.toString(), true),
-                        new Register("$" + idx.toString(), true)));
-                    // emit("sw $" + src + ", 0($" + idx + ")");
+                        new Register(addrTmp, true)));
                     emit(new MIPSInstruction(MIPSOp.SW, null,
                         new Register("$" + src.toString(), true),
-                        new Addr(new Imm("0", "DEC"), new Register("$" + idx.toString(), true))));
+                        new Addr(new Imm("0", "DEC"), new Register(addrTmp, true))));
                 }
 
             }
@@ -709,20 +708,18 @@ public class InstructionSelection {
                         new Register("$" + dest.toString(), true),
                         new Addr(new Imm(String.valueOf(offset), "DEC"), new Register("$" + arr.toString(), true))));
                 } else {
-                    // emit("sll $" + idx + ", $" + idx + ", 2");
+                    String addrTmp = "$__addr" + (addrTmpCounter++);
                     emit(new MIPSInstruction(MIPSOp.SLL, null,
-                        new Register("$" + idx.toString(), true),
+                        new Register(addrTmp, true),
                         new Register("$" + idx.toString(), true),
                         new Imm("2", "DEC")));
-                    // emit("add $" + idx + ", $" + arr + ", $" + idx);
                     emit(new MIPSInstruction(MIPSOp.ADD, null,
-                        new Register("$" + idx.toString(), true),
+                        new Register(addrTmp, true),
                         new Register("$" + arr.toString(), true),
-                        new Register("$" + idx.toString(), true)));
-                    // emit("lw $" + dest + ", 0($" + idx + ")");
+                        new Register(addrTmp, true)));
                     emit(new MIPSInstruction(MIPSOp.LW, null,
                         new Register("$" + dest.toString(), true),
-                        new Addr(new Imm("0", "DEC"), new Register("$" + idx.toString(), true))));
+                        new Addr(new Imm("0", "DEC"), new Register(addrTmp, true))));
                 }
             }
             case LABEL -> {
