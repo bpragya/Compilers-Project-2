@@ -1,23 +1,24 @@
 import ir.IRFunction;
-import ir.IRInstruction;
-import ir.operand.IRConstantOperand;
-import ir.operand.IROperand;
-import ir.operand.IRVariableOperand;
 import mips.MIPSInstruction;
 import mips.MIPSOp;
+import mips.MIPSProgram;
 import mips.operand.Addr;
 import mips.operand.Imm;
 import mips.operand.Register;
 import java.io.PrintStream;
 import java.util.HashMap;
 import java.util.Map;
-import mips.MIPSProgram;  
 
-public class NaiveAllocator{
+/**
+ * Performs naive register allocation by spilling all virtual registers to the
+ * stack. Each virtual register is assigned a fixed fp-relative slot; loads and
+ * stores are emitted around every instruction.
+ */
+public class NaiveAllocator {
 
-    private PrintStream out;
-    private Map<Integer, MIPSInstruction> instructions;
-    private Map<String, Integer> labels;
+    private final PrintStream out;
+    private final Map<Integer, MIPSInstruction> instructions;
+    private final Map<String, Integer> labels;
     private int mipsIdx = 0;
 
     public NaiveAllocator(PrintStream out) {
@@ -25,232 +26,149 @@ public class NaiveAllocator{
         this.instructions = new HashMap<>();
         this.labels = new HashMap<>();
     }
-    
 
+    /** Returns the emitted MIPS instructions indexed by emission order. */
     public Map<Integer, MIPSInstruction> getInstructions() {
         return instructions;
     }
 
+    /** Returns the label-to-instruction-index map. */
     public Map<String, Integer> getLabels() {
         return labels;
     }
 
-
-    private void emit(MIPSInstruction instr) { //should i create a new insturctions hashmap?
-        instructions.put(mipsIdx, instr);
-        mipsIdx+=1;
-        out.println("   " + instr);
-
-    } 
-
-    public void naiveAllocator(IRFunction func, MIPSProgram mipsProg) {
-
-        Map<String, Integer> vrMap = new HashMap<>(); //virtual register name, offset
-
-        //1) Prologue: save $ra, $fp on the stack, set $fp to the $sp location
-
-        //push ra on the stack
+    /**
+     * Allocates registers for {@code func} using the naive spill-everything
+     * strategy and emits the resulting MIPS instructions.
+     *
+     * @param func     the IR function being compiled
+     * @param mipsProg the unallocated MIPS program produced by instruction selection
+     */
+    public void allocate(IRFunction func, MIPSProgram mipsProg) {
         Register sp = new Register("$sp", false);
+        Register fp = new Register("$fp", false);
         Register ra = new Register("$ra", false);
 
-        emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("-4", "DEC")));
-        emit(new MIPSInstruction(MIPSOp.SW, null, ra, new Addr(new Imm("0", "DEC"), sp)));
+        emitPrologue(sp, fp, ra);
 
-        //push fp on the stack
-        Register fp = new Register("$fp", false);
+        Map<String, Integer> vrMap = buildVrMap(mipsProg);
+        int frameSize = 4 * vrMap.size();
+        emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp,
+                new Imm(String.valueOf(-frameSize), "DEC")));
+
+        loadParameters(func, vrMap, fp);
+        emitBody(mipsProg, vrMap, sp, fp);
+        emitEpilogue(sp, fp, ra);
+    }
+
+    // -------------------------------------------------------------------------
+    // Private helpers
+    // -------------------------------------------------------------------------
+
+    private void emit(MIPSInstruction instr) {
+        instructions.put(mipsIdx++, instr);
+        out.println("   " + instr);
+    }
+
+    private void emitPrologue(Register sp, Register fp, Register ra) {
         emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("-4", "DEC")));
-        emit(new MIPSInstruction(MIPSOp.SW, null, fp, new Addr(new Imm("0", "DEC"), sp)));
-        
-        //set fp to the sp location
+        emit(new MIPSInstruction(MIPSOp.SW,   null, ra, new Addr(new Imm("0", "DEC"), sp)));
+        emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("-4", "DEC")));
+        emit(new MIPSInstruction(MIPSOp.SW,   null, fp, new Addr(new Imm("0", "DEC"), sp)));
         emit(new MIPSInstruction(MIPSOp.MOVE, null, fp, sp));
-        
-        //2) Iterate through the MIPS function and create a hashmap of the virtual registers 
-        // and its offset on the stack (in relation to the fp). 
-        // Allocate memory the size of # of vr * 4 on the stack
+    }
 
-        
-
-        
-
+    private Map<String, Integer> buildVrMap(MIPSProgram mipsProg) {
+        Map<String, Integer> vrMap = new HashMap<>();
         int offset = -4;
-        for (MIPSInstruction inst: mipsProg.instructions.values()) {
-            
+
+        for (MIPSInstruction inst : mipsProg.instructions.values()) {
             for (Register r : inst.getReads()) {
                 if (r.isVirtual && !vrMap.containsKey(r.name)) {
                     vrMap.put(r.name, offset);
                     offset -= 4;
                 }
             }
-
             Register w = inst.getWrite();
             if (w != null && w.isVirtual && !vrMap.containsKey(w.name)) {
-                vrMap.put(w.name, offset); 
+                vrMap.put(w.name, offset);
                 offset -= 4;
             }
-            
         }
 
-        int frameSize = 4 * vrMap.size();
-        emit(new MIPSInstruction(MIPSOp.ADDI, null,
-            sp,
-            sp,
-            new Imm(String.valueOf(-frameSize), "DEC"))
-            );
+        return vrMap;
+    }
 
-        // Load parameters from caller's stack into local frame slots.
-        // After prologue: 0($fp)=saved $fp, 4($fp)=saved $ra, 8($fp)=arg1, 12($fp)=arg2, ...
+    private void loadParameters(IRFunction func, Map<String, Integer> vrMap, Register fp) {
         for (int i = 0; i < func.parameters.size(); i++) {
             String paramKey = "$" + func.parameters.get(i).getName();
             if (!vrMap.containsKey(paramKey)) {
                 System.err.println("Warning: parameter '" + paramKey +
-                    "' in function '" + func.name +
-                    "' has no vrMap slot (never referenced in body) — skipping load");
+                        "' in function '" + func.name +
+                        "' has no vrMap slot (never referenced in body) — skipping load");
                 continue;
             }
             Register t = new Register("$t0", false);
-            emit(new MIPSInstruction(MIPSOp.LW, null,
-                t,
-                new Addr(new Imm(String.valueOf(8 + i * 4), "DEC"), fp)));
-            emit(new MIPSInstruction(MIPSOp.SW, null,
-                t,
-                new Addr(new Imm(String.valueOf(vrMap.get(paramKey)), "DEC"), fp)));
+            emit(new MIPSInstruction(MIPSOp.LW, null, t,
+                    new Addr(new Imm(String.valueOf(8 + i * 4), "DEC"), fp)));
+            emit(new MIPSInstruction(MIPSOp.SW, null, t,
+                    new Addr(new Imm(String.valueOf(vrMap.get(paramKey)), "DEC"), fp)));
         }
+    }
 
-        //3) For each instruction, load the operands / virtual registers into physical registers
-        // and output it in a MIPS instruction with the physical registers.
-        
+    private void emitBody(MIPSProgram mipsProg, Map<String, Integer> vrMap,
+                          Register sp, Register fp) {
         for (MIPSInstruction inst : mipsProg.instructions.values()) {
-
-            int count = 0; //reset for each instruction
-
             if (inst.op == MIPSOp.JAL) {
-                //save t0-t9 before call
-                for (int i = 0; i < 10; i++) {
-                    //push the temp register on the stack
-                    emit(new MIPSInstruction(MIPSOp.ADDI, null,
-                            sp,
-                            sp,
-                            new Imm("-4", "DEC"))
-                    );
-                    emit(new MIPSInstruction(MIPSOp.SW, null,
-                        new Register("$t" + i, false),
-                        new Addr(new Imm("0", "DEC"),
-                        sp)));
-                
-                }
-
-                emit(inst); // - working with virtual registers i think?
-
-                //pop t0-t9 after call
-                for (int i = 9; i > -1; i--) {
-                    //pop the temp register on the stack
-                    emit(new MIPSInstruction(MIPSOp.LW, null,
-                        new Register("$t" + i, false),
-                        new Addr(new Imm("0", "DEC"),
-                        sp)));
-                    emit(new MIPSInstruction(MIPSOp.ADDI, null,
-                            sp,
-                            sp,
-                            new Imm("4", "DEC"))
-                    );
-                    
-                
-                }
-
+                emitCallWithSave(inst, sp);
             } else {
-
-                for (Register r : inst.getReads()) {
-                    Register t = new Register("$t" + count, false);
-
-                    //load the operands into temp registers
-                    emit(new MIPSInstruction(MIPSOp.LW, null, 
-                            t,
-                            new Addr(new Imm(String.valueOf(vrMap.get(r.name)), "DEC"), 
-                            new Register("$fp", false)))
-                        );
-
-                    
-                    count+=1;
-                    
-                }
-                Register w = inst.getWrite();
-                if (w != null && w.isVirtual) {
-                    emit(new MIPSInstruction(MIPSOp.SW, null,
-                                new Register("$t" + count, false), 
-                                new Addr(new Imm(String.valueOf(vrMap.get(w.name)), "DEC"), 
-                                new Register("$fp", false))));
-                }
+                emitWithSpill(inst, vrMap, fp);
             }
-            
-            // Step 4: execute the insturction - rebuild the instruction TODO:
+        }
+    }
 
-            //after instruction executes store the computed value in a temp register and
-            //its stack slot'
-            //TODO:
-            
+    private void emitCallWithSave(MIPSInstruction callInst, Register sp) {
+        for (int i = 0; i < 10; i++) {
+            emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("-4", "DEC")));
+            emit(new MIPSInstruction(MIPSOp.SW, null,
+                    new Register("$t" + i, false),
+                    new Addr(new Imm("0", "DEC"), sp)));
         }
 
+        emit(callInst);
 
-        // Epiloge: restore $fp, $ra
-        //pop value
-        //increment stack pointer
-        //set fp to the sp location
-        // Register sp = new Register("$sp", false);
-        // Register ra = new Register("$ra", false);
+        for (int i = 9; i >= 0; i--) {
+            emit(new MIPSInstruction(MIPSOp.LW, null,
+                    new Register("$t" + i, false),
+                    new Addr(new Imm("0", "DEC"), sp)));
+            emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("4", "DEC")));
+        }
+    }
 
-        //move sp back up to the frame pointer -- is this correct?
+    private void emitWithSpill(MIPSInstruction inst, Map<String, Integer> vrMap,
+                               Register fp) {
+        int count = 0;
+        for (Register r : inst.getReads()) {
+            emit(new MIPSInstruction(MIPSOp.LW, null,
+                    new Register("$t" + count, false),
+                    new Addr(new Imm(String.valueOf(vrMap.get(r.name)), "DEC"), fp)));
+            count++;
+        }
+
+        Register w = inst.getWrite();
+        if (w != null && w.isVirtual) {
+            emit(new MIPSInstruction(MIPSOp.SW, null,
+                    new Register("$t" + count, false),
+                    new Addr(new Imm(String.valueOf(vrMap.get(w.name)), "DEC"), fp)));
+        }
+    }
+
+    private void emitEpilogue(Register sp, Register fp, Register ra) {
         emit(new MIPSInstruction(MIPSOp.MOVE, null, sp, fp));
-
-        //pop fp on the stack
-        //Register fp = new Register("$fp", false);
-        emit(new MIPSInstruction(MIPSOp.LW, null, fp, new Addr(new Imm("0", "DEC"), sp)));
+        emit(new MIPSInstruction(MIPSOp.LW,   null, fp, new Addr(new Imm("0", "DEC"), sp)));
         emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("4", "DEC")));
-
-        //pop ra on the stack
-        emit(new MIPSInstruction(MIPSOp.LW, null, ra, new Addr(new Imm("0", "DEC"), sp)));
+        emit(new MIPSInstruction(MIPSOp.LW,   null, ra, new Addr(new Imm("0", "DEC"), sp)));
         emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("4", "DEC")));
-
-        emit(new MIPSInstruction(MIPSOp.JR, null, ra));
-
-
-        
-        
-        
-
+        emit(new MIPSInstruction(MIPSOp.JR,   null, ra));
     }
-
-
-
-
-    }
-
-/*
-public MIPSInstruction(MIPSOp op, String label, MIPSOperand... operands) {
-        this.op = op;
-        this.label = label;
-        this.operands = Arrays.asList(operands);
-    }
-
-*/
-
-
-
-    
-
-
-/*
-
-Instruction selection generates a MIPS program.
-
-1) Prologue: save $ra, $fp on the stack, set $fp to the $sp location
-
-2) Iterate through the MIPS function and create a hashmap of the virtual registers and its offset on the stack (in relation to the fp). Allocate memory the size of # of vr * 4 on the stack
-
-3) For each instruction, load the operands / virtual registers into physical registers and output it in a MIPS instruction with the physical registers.
-
-4) Save the result in that value's stack slot
-
-5) Epiloge: restore $ra, $fp
-
-
-*/
+}

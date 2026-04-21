@@ -1,4 +1,3 @@
-import ir.IRFunction;
 import ir.IRInstruction;
 import ir.datatype.IRFloatType;
 import ir.operand.IRConstantOperand;
@@ -13,604 +12,273 @@ import java.io.PrintStream;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Translates a single IR instruction into one or more MIPS instructions.
+ * Constants are materialized into fresh virtual temporaries as needed.
+ * One instance should be created per IR function so that the temporary
+ * counter resets between functions.
+ */
 public class InstructionSelection {
 
-  private PrintStream out;
-  private Map<Integer, MIPSInstruction> instructions;
-  private Map<String, Integer> labels;
-  private int mipsIdx = 0;
-  private int addrTmpCounter = 0;
+    private final PrintStream out;
+    private final Map<Integer, MIPSInstruction> instructions;
+    private final Map<String, Integer> labels;
+    private int mipsIdx = 0;
+    private int tmpCounter = 0;
+    private int addrTmpCounter = 0;
 
-  public InstructionSelection(PrintStream out) {
-    this.out = out;
-    this.instructions = new HashMap<>();
-    this.labels = new HashMap<>();
-  }
+    public InstructionSelection(PrintStream out) {
+        this.out = out;
+        this.instructions = new HashMap<>();
+        this.labels = new HashMap<>();
+    }
 
-  public Map<Integer, MIPSInstruction> getInstructions() {
-    return instructions;
-  }
+    /** Returns the emitted MIPS instructions indexed by emission order. */
+    public Map<Integer, MIPSInstruction> getInstructions() {
+        return instructions;
+    }
 
-  public Map<String, Integer> getLabels() {
-    return labels;
-  }
+    /** Returns the label-to-instruction-index map. */
+    public Map<String, Integer> getLabels() {
+        return labels;
+    }
 
-  public void emit(MIPSInstruction instr) {
-    instructions.put(mipsIdx, instr);
-    mipsIdx += 1;
-    out.println("   " + instr);
-  }
+    /**
+     * Translates {@code instr} and emits the resulting MIPS instruction(s).
+     *
+     * @param instr the IR instruction to lower
+     */
+    public void generateInstructions(IRInstruction instr) {
+        switch (instr.opCode) {
+            case ASSIGN -> emitAssign(instr);
+            case ADD    -> emitAdd(instr);
+            case SUB    -> emitSub(instr);
+            case MULT   -> emitBinaryRR(instr, MIPSOp.MUL);
+            case DIV    -> emitBinaryRR(instr, MIPSOp.DIV);
+            case AND    -> emitBinaryRR(instr, MIPSOp.AND);
+            case OR     -> emitBinaryRR(instr, MIPSOp.OR);
+            case GOTO   -> emit(new MIPSInstruction(MIPSOp.J, null,
+                                    new Addr(instr.operands[0].toString())));
+            case BREQ   -> emitBranch(instr, MIPSOp.BEQ);
+            case BRNEQ  -> emitBranch(instr, MIPSOp.BNE);
+            case BRLT   -> emitBranch(instr, MIPSOp.BLT);
+            case BRGT   -> emitBranch(instr, MIPSOp.BGT);
+            case BRGEQ  -> emitBranch(instr, MIPSOp.BGE);
+            case RETURN -> emitReturn(instr);
+            case CALL   -> emitCall(instr);
+            case CALLR  -> emitCallR(instr);
+            case ARRAY_STORE -> emitArrayStore(instr);
+            case ARRAY_LOAD  -> emitArrayLoad(instr);
+            case LABEL  -> {
+                labels.put(instr.operands[0].toString(), mipsIdx);
+                out.println("   " + instr.operands[0] + ":");
+            }
+        }
+    }
 
-  // not sure if this structure is correct
-  int count = 0;
+    // -------------------------------------------------------------------------
+    // Private helpers
+    // -------------------------------------------------------------------------
 
-  public void generateInstructions(IRInstruction instr) {
+    private void emit(MIPSInstruction instr) {
+        instructions.put(mipsIdx++, instr);
+        out.println("   " + instr);
+    }
 
-    switch (instr.opCode) {
-      case ASSIGN -> {
+    /**
+     * Returns a virtual register holding {@code op}'s value. If {@code op} is a
+     * constant, a fresh temporary is materialized with {@code li}; otherwise the
+     * operand's existing virtual register is returned directly.
+     */
+    private Register resolveToRegister(IROperand op) {
+        if (op instanceof IRConstantOperand) {
+            String tmp = "$tmp" + tmpCounter++;
+            emit(new MIPSInstruction(MIPSOp.LI, null,
+                    new Register(tmp, true),
+                    new Imm(op.toString(), "DEC")));
+            return new Register(tmp, true);
+        }
+        return new Register("$" + op.toString(), true);
+    }
+
+    private Register vr(IROperand op) {
+        return new Register("$" + op.toString(), true);
+    }
+
+    private void emitAssign(IRInstruction instr) {
         IROperand dest = instr.operands[0];
-        IROperand src = instr.operands[1];
-
+        IROperand src  = instr.operands[1];
         if (src instanceof IRVariableOperand) {
-          emit(new MIPSInstruction(MIPSOp.MOVE, null,
-              new Register("$" + dest.toString(), true), new Register("$" + src.toString(), true)));
-
-        } else /* if (src instanceof IRConstantOperand) */ {
-          emit(
-              new MIPSInstruction(MIPSOp.LI, null,
-                  new Register("$" + dest.toString(), true), new Imm(src.toString(), "DEC")));
+            emit(new MIPSInstruction(MIPSOp.MOVE, null, vr(dest), vr(src)));
+        } else {
+            emit(new MIPSInstruction(MIPSOp.LI, null, vr(dest),
+                    new Imm(src.toString(), "DEC")));
         }
+    }
 
-      }
-
-      case ADD -> {
+    private void emitAdd(IRInstruction instr) {
         IROperand dest = instr.operands[0];
         IROperand src1 = instr.operands[1];
         IROperand src2 = instr.operands[2];
+        boolean c1 = src1 instanceof IRConstantOperand;
+        boolean c2 = src2 instanceof IRConstantOperand;
 
-        boolean src1const = src1 instanceof IRConstantOperand;
-        boolean src2const = src2 instanceof IRConstantOperand;
-
-        if (src1const && src2const) { // both are constants
-          String tmp = "$tmp" + count++;
-          emit(
-              new MIPSInstruction(MIPSOp.LI, null,
-                  new Register(tmp, true),
-                  new Imm(src1.toString(), "DEC")));
-          emit(
-              new MIPSInstruction(MIPSOp.ADDI, null,
-                  new Register("$" + dest.toString(), true),
-                  new Register(tmp, true),
-                  new Imm(src2.toString(), "DEC"))
-
-          );
-
-        } else if (!src1const && src2const) {
-          emit(
-              new MIPSInstruction(MIPSOp.ADDI, null,
-                  new Register("$" + dest.toString(), true),
-                  new Register("$" + src1.toString(), true),
-                  new Imm(src2.toString(), "DEC")));
-        } else if (src1const && !src2const) {
-          emit(
-              new MIPSInstruction(MIPSOp.ADDI, null,
-                  new Register("$" + dest.toString(), true),
-                  new Register("$" + src2.toString(), true),
-                  new Imm(src1.toString(), "DEC")));
+        if (!c1 && !c2) {
+            emit(new MIPSInstruction(MIPSOp.ADD, null, vr(dest), vr(src1), vr(src2)));
+        } else if (!c1) {
+            emit(new MIPSInstruction(MIPSOp.ADDI, null, vr(dest), vr(src1),
+                    new Imm(src2.toString(), "DEC")));
+        } else if (!c2) {
+            emit(new MIPSInstruction(MIPSOp.ADDI, null, vr(dest), vr(src2),
+                    new Imm(src1.toString(), "DEC")));
         } else {
-          emit(
-              new MIPSInstruction(MIPSOp.ADD, null,
-                  new Register("$" + dest.toString(), true),
-                  new Register("$" + src1.toString(), true),
-                  new Register("$" + src2.toString(), true)));
+            String tmp = "$tmp" + tmpCounter++;
+            emit(new MIPSInstruction(MIPSOp.LI,   null, new Register(tmp, true),
+                    new Imm(src1.toString(), "DEC")));
+            emit(new MIPSInstruction(MIPSOp.ADDI, null, vr(dest),
+                    new Register(tmp, true), new Imm(src2.toString(), "DEC")));
         }
-      }
+    }
 
-      case SUB -> {
+    private void emitSub(IRInstruction instr) {
         IROperand dest = instr.operands[0];
         IROperand src1 = instr.operands[1];
         IROperand src2 = instr.operands[2];
+        boolean c1 = src1 instanceof IRConstantOperand;
+        boolean c2 = src2 instanceof IRConstantOperand;
 
-        boolean src1const = src1 instanceof IRConstantOperand;
-        boolean src2const = src2 instanceof IRConstantOperand;
-
-        if (!src1const && !src2const) { // both vars
-          emit(new MIPSInstruction(MIPSOp.SUB, null,
-              new Register("$" + dest.toString(), true),
-              new Register("$" + src1.toString(), true),
-              new Register("$" + src2.toString(), true)));
-        } else if (!src1const) { // src1 var, src2 const
-          IRConstantOperand src2c = (IRConstantOperand) src2;
-          if (src2c.type instanceof IRFloatType) {
-            String tmp = "$tmp" + count++;
-            emit(new MIPSInstruction(MIPSOp.LI_S, null,
-                new Register(tmp, true),
-                new Imm(src2.toString(), "DEC")));
-            emit(new MIPSInstruction(MIPSOp.SUB_S, null,
-                new Register("$" + dest.toString(), true),
-                new Register("$" + src1.toString(), true),
-                new Register(tmp, true)));
-          } else {
-            int negated = -Integer.parseInt(src2.toString());
-            emit(new MIPSInstruction(MIPSOp.ADDI, null,
-                new Register("$" + dest.toString(), true),
-                new Register("$" + src1.toString(), true),
-                new Imm(String.valueOf(negated), "DEC")));
-          }
-        } else if (!src2const) {
-
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src1.toString(), "DEC")));
-          emit(new MIPSInstruction(MIPSOp.SUB, null,
-              new Register("$" + dest.toString(), true),
-              new Register(tmp, true),
-              new Register("$" + src2.toString(), true)));
-        } else { // both const
-          IRConstantOperand src2c = (IRConstantOperand) src2;
-          if (src2c.type instanceof IRFloatType) {
-            String tmp1 = "$tmp" + count++;
-            String tmp2 = "$tmp" + count++;
-            emit(new MIPSInstruction(MIPSOp.LI_S, null,
-                new Register(tmp1, true),
-                new Imm(src1.toString(), "DEC")));
-            emit(new MIPSInstruction(MIPSOp.LI_S, null,
-                new Register(tmp2, true),
-                new Imm(src2.toString(), "DEC")));
-            emit(new MIPSInstruction(MIPSOp.SUB_S, null,
-                new Register("$" + dest.toString(), true),
-                new Register(tmp1, true),
-                new Register(tmp2, true)));
-          } else {
-            String tmp = "$tmp" + count++;
-            emit(new MIPSInstruction(MIPSOp.LI, null,
-                new Register(tmp, true),
-                new Imm(src1.toString(), "DEC")));
-            int negated = -Integer.parseInt(src2.toString());
-            emit(new MIPSInstruction(MIPSOp.ADDI, null,
-                new Register("$" + dest.toString(), true),
-                new Register(tmp, true),
-                new Imm(String.valueOf(negated), "DEC")));
-          }
+        if (!c1 && !c2) {
+            emit(new MIPSInstruction(MIPSOp.SUB, null, vr(dest), vr(src1), vr(src2)));
+        } else if (!c1) {
+            // src1 is a variable, src2 is a constant
+            IRConstantOperand src2c = (IRConstantOperand) src2;
+            if (src2c.type instanceof IRFloatType) {
+                Register tmp = resolveToRegister(src2);
+                emit(new MIPSInstruction(MIPSOp.SUB_S, null, vr(dest), vr(src1), tmp));
+            } else {
+                int negated = -Integer.parseInt(src2.toString());
+                emit(new MIPSInstruction(MIPSOp.ADDI, null, vr(dest), vr(src1),
+                        new Imm(String.valueOf(negated), "DEC")));
+            }
+        } else if (!c2) {
+            String tmp = "$tmp" + tmpCounter++;
+            emit(new MIPSInstruction(MIPSOp.LI,  null, new Register(tmp, true),
+                    new Imm(src1.toString(), "DEC")));
+            emit(new MIPSInstruction(MIPSOp.SUB, null, vr(dest),
+                    new Register(tmp, true), vr(src2)));
+        } else {
+            // both are constants
+            IRConstantOperand src2c = (IRConstantOperand) src2;
+            if (src2c.type instanceof IRFloatType) {
+                String tmp1 = "$tmp" + tmpCounter++;
+                String tmp2 = "$tmp" + tmpCounter++;
+                emit(new MIPSInstruction(MIPSOp.LI_S, null, new Register(tmp1, true),
+                        new Imm(src1.toString(), "DEC")));
+                emit(new MIPSInstruction(MIPSOp.LI_S, null, new Register(tmp2, true),
+                        new Imm(src2.toString(), "DEC")));
+                emit(new MIPSInstruction(MIPSOp.SUB_S, null, vr(dest),
+                        new Register(tmp1, true), new Register(tmp2, true)));
+            } else {
+                String tmp = "$tmp" + tmpCounter++;
+                emit(new MIPSInstruction(MIPSOp.LI, null, new Register(tmp, true),
+                        new Imm(src1.toString(), "DEC")));
+                int negated = -Integer.parseInt(src2.toString());
+                emit(new MIPSInstruction(MIPSOp.ADDI, null, vr(dest),
+                        new Register(tmp, true),
+                        new Imm(String.valueOf(negated), "DEC")));
+            }
         }
+    }
 
-      }
-
-      case MULT -> {
+    private void emitBinaryRR(IRInstruction instr, MIPSOp op) {
         IROperand dest = instr.operands[0];
-        IROperand src1 = instr.operands[1];
-        IROperand src2 = instr.operands[2];
+        Register r1 = resolveToRegister(instr.operands[1]);
+        Register r2 = resolveToRegister(instr.operands[2]);
+        emit(new MIPSInstruction(op, null, vr(dest), r1, r2));
+    }
 
-        Register r1;
-        Register r2;
-        if (src1 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src1.toString(), "DEC")));
-          r1 = new Register(tmp, true);
-        } else {
-          r1 = new Register("$" + src1.toString(), true);
-        }
+    private void emitBranch(IRInstruction instr, MIPSOp op) {
+        String label = instr.operands[0].toString();
+        Register r1 = resolveToRegister(instr.operands[1]);
+        Register r2 = resolveToRegister(instr.operands[2]);
+        emit(new MIPSInstruction(op, null, r1, r2, new Addr(label)));
+    }
 
-        if (src2 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src2.toString(), "DEC")));
-          r2 = new Register(tmp, true);
-        } else {
-          r2 = new Register("$" + src2.toString(), true);
-        }
-        emit(new MIPSInstruction(MIPSOp.MUL, null,
-            new Register("$" + dest.toString(), true),
-            r1,
-            r2));
-      }
-
-      case DIV -> {
-        IROperand dest = instr.operands[0];
-        IROperand src1 = instr.operands[1];
-        IROperand src2 = instr.operands[2];
-        Register r1;
-        Register r2;
-
-        if (src1 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src1.toString(), "DEC")));
-          r1 = new Register(tmp, true);
-        } else {
-          r1 = new Register("$" + src1.toString(), true);
-        }
-
-        if (src2 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src2.toString(), "DEC")));
-          r2 = new Register(tmp, true);
-        } else {
-          r2 = new Register("$" + src2.toString(), true);
-        }
-
-        emit(new MIPSInstruction(MIPSOp.DIV, null,
-            new Register("$" + dest.toString(), true),
-            r1,
-            r2));
-      }
-      case AND -> {
-        IROperand dest = instr.operands[0];
-        IROperand src1 = instr.operands[1];
-        IROperand src2 = instr.operands[2];
-        Register r1;
-        Register r2;
-
-        if (src1 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src1.toString(), "DEC")));
-          r1 = new Register(tmp, true);
-        } else {
-          r1 = new Register("$" + src1.toString(), true);
-        }
-
-        if (src2 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src2.toString(), "DEC")));
-          r2 = new Register(tmp, true);
-        } else {
-          r2 = new Register("$" + src2.toString(), true);
-        }
-
-        emit(new MIPSInstruction(MIPSOp.AND, null,
-            new Register("$" + dest.toString(), true),
-            r1,
-            r2));
-
-      }
-      case OR -> {
-        IROperand dest = instr.operands[0];
-        IROperand src1 = instr.operands[1];
-        IROperand src2 = instr.operands[2];
-        Register r1;
-        Register r2;
-
-        if (src1 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src1.toString(), "DEC")));
-          r1 = new Register(tmp, true);
-        } else {
-          r1 = new Register("$" + src1.toString(), true);
-        }
-
-        if (src2 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src2.toString(), "DEC")));
-          r2 = new Register(tmp, true);
-        } else {
-          r2 = new Register("$" + src2.toString(), true);
-        }
-
-        emit(new MIPSInstruction(MIPSOp.OR, null,
-            new Register("$" + dest.toString(), true),
-            r1,
-            r2));
-
-      } // ---------------------------------------------------------------------
-      case GOTO -> {
-        IROperand labelName = instr.operands[0];
-        emit(new MIPSInstruction(MIPSOp.J, null, new Addr(labelName.toString())));
-      }
-      case BREQ -> {
-        IROperand labelName = instr.operands[0];
-        IROperand src1 = instr.operands[1];
-        IROperand src2 = instr.operands[2];
-        Register r1;
-        Register r2;
-
-        if (src1 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src1.toString(), "DEC")));
-          r1 = new Register(tmp, true);
-        } else {
-          r1 = new Register("$" + src1.toString(), true);
-        }
-
-        if (src2 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src2.toString(), "DEC")));
-          r2 = new Register(tmp, true);
-        } else {
-          r2 = new Register("$" + src2.toString(), true);
-        }
-
-        emit(new MIPSInstruction(MIPSOp.BEQ, null,
-            r1, r2, new Addr(labelName.toString())));
-
-      }
-      case BRNEQ -> {
-        IROperand labelName = instr.operands[0];
-        IROperand src1 = instr.operands[1];
-        IROperand src2 = instr.operands[2];
-        Register r1;
-        Register r2;
-
-        if (src1 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src1.toString(), "DEC")));
-          r1 = new Register(tmp, true);
-        } else {
-          r1 = new Register("$" + src1.toString(), true);
-        }
-
-        if (src2 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src2.toString(), "DEC")));
-          r2 = new Register(tmp, true);
-        } else {
-          r2 = new Register("$" + src2.toString(), true);
-        }
-
-        emit(new MIPSInstruction(MIPSOp.BNE, null,
-            r1, r2, new Addr(labelName.toString())));
-
-      }
-      case BRLT -> {
-        IROperand labelName = instr.operands[0];
-        IROperand src1 = instr.operands[1];
-        IROperand src2 = instr.operands[2];
-        Register r1;
-        Register r2;
-
-        if (src1 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src1.toString(), "DEC")));
-          r1 = new Register(tmp, true);
-        } else {
-          r1 = new Register("$" + src1.toString(), true);
-        }
-
-        if (src2 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src2.toString(), "DEC")));
-          r2 = new Register(tmp, true);
-        } else {
-          r2 = new Register("$" + src2.toString(), true);
-        }
-
-        emit(new MIPSInstruction(MIPSOp.BLT, null,
-            r1, r2, new Addr(labelName.toString())));
-
-      }
-      case BRGT -> {
-        IROperand labelName = instr.operands[0];
-        IROperand src1 = instr.operands[1];
-        IROperand src2 = instr.operands[2];
-        Register r1;
-        Register r2;
-
-        if (src1 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src1.toString(), "DEC")));
-          r1 = new Register(tmp, true);
-        } else {
-          r1 = new Register("$" + src1.toString(), true);
-        }
-
-        if (src2 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src2.toString(), "DEC")));
-          r2 = new Register(tmp, true);
-        } else {
-          r2 = new Register("$" + src2.toString(), true);
-        }
-
-        emit(new MIPSInstruction(MIPSOp.BGT, null,
-            r1, r2, new Addr(labelName.toString())));
-
-      }
-      case BRGEQ -> {
-        IROperand labelName = instr.operands[0];
-        IROperand src1 = instr.operands[1];
-        IROperand src2 = instr.operands[2];
-        Register r1;
-        Register r2;
-
-        if (src1 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src1.toString(), "DEC")));
-          r1 = new Register(tmp, true);
-        } else {
-          r1 = new Register("$" + src1.toString(), true);
-        }
-
-        if (src2 instanceof IRConstantOperand) {
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src2.toString(), "DEC")));
-          r2 = new Register(tmp, true);
-        } else {
-          r2 = new Register("$" + src2.toString(), true);
-        }
-
-        emit(new MIPSInstruction(MIPSOp.BGE, null,
-            r1, r2, new Addr(labelName.toString())));
-
-      }
-      case RETURN -> {
+    private void emitReturn(IRInstruction instr) {
         if (instr.operands != null && instr.operands.length > 0) {
-          IROperand src = instr.operands[0];
-          Register r;
-
-          if (src instanceof IRConstantOperand) {
-            String tmp = "$tmp" + count++;
-            emit(new MIPSInstruction(MIPSOp.LI, null,
-                new Register(tmp, true),
-                new Imm(src.toString(), "DEC")));
-            r = new Register(tmp, true);
-          } else {
-            r = new Register("$" + src.toString(), true);
-          }
-
-          emit(new MIPSInstruction(MIPSOp.MOVE, null,
-              new Register("$v0", false), r));
+            Register r = resolveToRegister(instr.operands[0]);
+            emit(new MIPSInstruction(MIPSOp.MOVE, null,
+                    new Register("$v0", false), r));
         }
+        emit(new MIPSInstruction(MIPSOp.JR, null, new Register("$ra", false)));
+    }
 
-        emit(new MIPSInstruction(MIPSOp.JR, null,
-            new Register("$ra", false)));
-
-      }
-      case CALL -> {
-        IROperand funcOp = instr.operands[0];
-
+    private void emitCall(IRInstruction instr) {
         Register sp = new Register("$sp", false);
+        pushArgsToStack(instr, 1, sp);
+        emit(new MIPSInstruction(MIPSOp.JAL, null, new Addr(instr.operands[0].toString())));
+        int argCount = instr.operands.length - 1;
+        emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp,
+                new Imm(String.valueOf(4 * argCount), "DEC")));
+    }
 
-        for (int i = instr.operands.length - 1; i > 0; i--) { // pushing the args in reverse order
-          Register argReg;
-          if (instr.operands[i] instanceof IRConstantOperand) {
-            String tmp = "$tmp" + count++;
-            emit(new MIPSInstruction(MIPSOp.LI, null,
-                new Register(tmp, true),
-                new Imm(instr.operands[i].toString(), "DEC")));
-            argReg = new Register(tmp, true);
-          } else {
-            argReg = new Register("$" + instr.operands[i].toString(), true);
-          }
-          emit(new MIPSInstruction(MIPSOp.ADDI, null,
-              sp, sp, new Imm("-4", "DEC")));
-          emit(new MIPSInstruction(MIPSOp.SW, null,
-              argReg, new Addr(new Imm("0", "DEC"), sp)));
-        }
-
-        emit(new MIPSInstruction(MIPSOp.JAL, null,
-            new Addr(funcOp.toString())));
-
-        emit(new MIPSInstruction(MIPSOp.ADDI, null,
-            sp, sp, new Imm(String.valueOf(4 * (instr.operands.length - 1)), "DEC")));
-
-      }
-      case CALLR -> {
-        IROperand dest = instr.operands[0];
-        IROperand funcOp = instr.operands[1];
-
+    private void emitCallR(IRInstruction instr) {
+        IROperand dest  = instr.operands[0];
         Register sp = new Register("$sp", false);
+        pushArgsToStack(instr, 2, sp);
+        emit(new MIPSInstruction(MIPSOp.JAL, null, new Addr(instr.operands[1].toString())));
+        emit(new MIPSInstruction(MIPSOp.MOVE, null, vr(dest), new Register("$v0", false)));
+        int argCount = instr.operands.length - 2;
+        emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp,
+                new Imm(String.valueOf(4 * argCount), "DEC")));
+    }
 
-        for (int i = instr.operands.length - 1; i > 1; i--) { // pushing the args in reverse order
-          Register argReg;
-          if (instr.operands[i] instanceof IRConstantOperand) {
-            String tmp = "$tmp" + count++;
-            emit(new MIPSInstruction(MIPSOp.LI, null,
-                new Register(tmp, true),
-                new Imm(instr.operands[i].toString(), "DEC")));
-            argReg = new Register(tmp, true);
-          } else {
-            argReg = new Register("$" + instr.operands[i].toString(), true);
-          }
-          emit(new MIPSInstruction(MIPSOp.ADDI, null,
-              sp, sp, new Imm("-4", "DEC")));
-          emit(new MIPSInstruction(MIPSOp.SW, null,
-              argReg, new Addr(new Imm("0", "DEC"), sp)));
+    private void pushArgsToStack(IRInstruction instr, int firstArgIdx, Register sp) {
+        for (int i = instr.operands.length - 1; i >= firstArgIdx; i--) {
+            Register argReg = resolveToRegister(instr.operands[i]);
+            emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("-4", "DEC")));
+            emit(new MIPSInstruction(MIPSOp.SW,   null, argReg,
+                    new Addr(new Imm("0", "DEC"), sp)));
         }
+    }
 
-        emit(new MIPSInstruction(MIPSOp.JAL, null,
-            new Addr(funcOp.toString())));
-
-        emit(new MIPSInstruction(MIPSOp.MOVE, null,
-            new Register("$" + dest.toString(), true),
-            new Register("$v0", false)));
-
-        emit(new MIPSInstruction(MIPSOp.ADDI, null,
-            sp, sp, new Imm(String.valueOf(4 * (instr.operands.length - 2)), "DEC")));
-
-      }
-      case ARRAY_STORE -> {
+    private void emitArrayStore(IRInstruction instr) {
         IROperand src = instr.operands[0];
         IROperand arr = instr.operands[1];
         IROperand idx = instr.operands[2];
 
         if (idx instanceof IRConstantOperand) {
-          int offset = 4 * Integer.parseInt(((IRConstantOperand) idx).getValueString());
-          // emit("sw $" + src + ", " + offset + "($" + arr + ")");
-          emit(new MIPSInstruction(MIPSOp.SW, null,
-              new Register("$" + src.toString(), true),
-              new Addr(new Imm(String.valueOf(offset), "DEC"), new Register("$" + arr.toString(), true))));
+            int offset = 4 * Integer.parseInt(((IRConstantOperand) idx).getValueString());
+            emit(new MIPSInstruction(MIPSOp.SW, null, vr(src),
+                    new Addr(new Imm(String.valueOf(offset), "DEC"), vr(arr))));
         } else {
-          String addrTmp = "$__addr" + (addrTmpCounter++);
-          emit(new MIPSInstruction(MIPSOp.SLL, null,
-              new Register(addrTmp, true),
-              new Register("$" + idx.toString(), true),
-              new Imm("2", "DEC")));
-          emit(new MIPSInstruction(MIPSOp.ADD, null,
-              new Register(addrTmp, true),
-              new Register("$" + arr.toString(), true),
-              new Register(addrTmp, true)));
-          emit(new MIPSInstruction(MIPSOp.SW, null,
-              new Register("$" + src.toString(), true),
-              new Addr(new Imm("0", "DEC"), new Register(addrTmp, true))));
+            String addrTmp = "$__addr" + addrTmpCounter++;
+            emit(new MIPSInstruction(MIPSOp.SLL, null,
+                    new Register(addrTmp, true), vr(idx), new Imm("2", "DEC")));
+            emit(new MIPSInstruction(MIPSOp.ADD, null,
+                    new Register(addrTmp, true), vr(arr), new Register(addrTmp, true)));
+            emit(new MIPSInstruction(MIPSOp.SW, null, vr(src),
+                    new Addr(new Imm("0", "DEC"), new Register(addrTmp, true))));
         }
+    }
 
-      }
-      case ARRAY_LOAD -> {
+    private void emitArrayLoad(IRInstruction instr) {
         IROperand dest = instr.operands[0];
-        IROperand arr = instr.operands[1];
-        IROperand idx = instr.operands[2];
+        IROperand arr  = instr.operands[1];
+        IROperand idx  = instr.operands[2];
 
         if (idx instanceof IRConstantOperand) {
-          int offset = 4 * Integer.parseInt(((IRConstantOperand) idx).getValueString());
-          // emit("lw $" + dest + ", " + offset + "($" + arr + ")");
-          emit(new MIPSInstruction(MIPSOp.LW, null,
-              new Register("$" + dest.toString(), true),
-              new Addr(new Imm(String.valueOf(offset), "DEC"), new Register("$" + arr.toString(), true))));
+            int offset = 4 * Integer.parseInt(((IRConstantOperand) idx).getValueString());
+            emit(new MIPSInstruction(MIPSOp.LW, null, vr(dest),
+                    new Addr(new Imm(String.valueOf(offset), "DEC"), vr(arr))));
         } else {
-          String addrTmp = "$__addr" + (addrTmpCounter++);
-          emit(new MIPSInstruction(MIPSOp.SLL, null,
-              new Register(addrTmp, true),
-              new Register("$" + idx.toString(), true),
-              new Imm("2", "DEC")));
-          emit(new MIPSInstruction(MIPSOp.ADD, null,
-              new Register(addrTmp, true),
-              new Register("$" + arr.toString(), true),
-              new Register(addrTmp, true)));
-          emit(new MIPSInstruction(MIPSOp.LW, null,
-              new Register("$" + dest.toString(), true),
-              new Addr(new Imm("0", "DEC"), new Register(addrTmp, true))));
+            String addrTmp = "$__addr" + addrTmpCounter++;
+            emit(new MIPSInstruction(MIPSOp.SLL, null,
+                    new Register(addrTmp, true), vr(idx), new Imm("2", "DEC")));
+            emit(new MIPSInstruction(MIPSOp.ADD, null,
+                    new Register(addrTmp, true), vr(arr), new Register(addrTmp, true)));
+            emit(new MIPSInstruction(MIPSOp.LW, null, vr(dest),
+                    new Addr(new Imm("0", "DEC"), new Register(addrTmp, true))));
         }
-      }
-      case LABEL -> {
-        IROperand labelName = instr.operands[0];
-        labels.put(labelName.toString(), mipsIdx);
-        out.println("   " + labelName + ":");
-      }
-
     }
-  }
 }
