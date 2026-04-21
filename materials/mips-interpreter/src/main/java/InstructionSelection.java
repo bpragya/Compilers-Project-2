@@ -1,5 +1,6 @@
 import ir.IRFunction;
 import ir.IRInstruction;
+import ir.datatype.IRFloatType;
 import ir.operand.IRConstantOperand;
 import ir.operand.IROperand;
 import ir.operand.IRVariableOperand;
@@ -119,11 +120,23 @@ public class InstructionSelection {
               new Register("$" + src1.toString(), true),
               new Register("$" + src2.toString(), true)));
         } else if (!src1const) { // src1 var, src2 const
-          int negated = -Integer.parseInt(src2.toString());
-          emit(new MIPSInstruction(MIPSOp.ADDI, null,
-              new Register("$" + dest.toString(), true),
-              new Register("$" + src1.toString(), true),
-              new Imm(String.valueOf(negated), "DEC")));
+          IRConstantOperand src2c = (IRConstantOperand) src2;
+          if (src2c.type instanceof IRFloatType) {
+            String tmp = "$tmp" + count++;
+            emit(new MIPSInstruction(MIPSOp.LI_S, null,
+                new Register(tmp, true),
+                new Imm(src2.toString(), "DEC")));
+            emit(new MIPSInstruction(MIPSOp.SUB_S, null,
+                new Register("$" + dest.toString(), true),
+                new Register("$" + src1.toString(), true),
+                new Register(tmp, true)));
+          } else {
+            int negated = -Integer.parseInt(src2.toString());
+            emit(new MIPSInstruction(MIPSOp.ADDI, null,
+                new Register("$" + dest.toString(), true),
+                new Register("$" + src1.toString(), true),
+                new Imm(String.valueOf(negated), "DEC")));
+          }
         } else if (!src2const) {
 
           String tmp = "$tmp" + count++;
@@ -134,17 +147,32 @@ public class InstructionSelection {
               new Register("$" + dest.toString(), true),
               new Register(tmp, true),
               new Register("$" + src2.toString(), true)));
-        } else {
-
-          String tmp = "$tmp" + count++;
-          emit(new MIPSInstruction(MIPSOp.LI, null,
-              new Register(tmp, true),
-              new Imm(src1.toString(), "DEC")));
-          int negated = -Integer.parseInt(src2.toString());
-          emit(new MIPSInstruction(MIPSOp.ADDI, null,
-              new Register("$" + dest.toString(), true),
-              new Register(tmp, true),
-              new Imm(String.valueOf(negated), "DEC")));
+        } else { // both const
+          IRConstantOperand src2c = (IRConstantOperand) src2;
+          if (src2c.type instanceof IRFloatType) {
+            String tmp1 = "$tmp" + count++;
+            String tmp2 = "$tmp" + count++;
+            emit(new MIPSInstruction(MIPSOp.LI_S, null,
+                new Register(tmp1, true),
+                new Imm(src1.toString(), "DEC")));
+            emit(new MIPSInstruction(MIPSOp.LI_S, null,
+                new Register(tmp2, true),
+                new Imm(src2.toString(), "DEC")));
+            emit(new MIPSInstruction(MIPSOp.SUB_S, null,
+                new Register("$" + dest.toString(), true),
+                new Register(tmp1, true),
+                new Register(tmp2, true)));
+          } else {
+            String tmp = "$tmp" + count++;
+            emit(new MIPSInstruction(MIPSOp.LI, null,
+                new Register(tmp, true),
+                new Imm(src1.toString(), "DEC")));
+            int negated = -Integer.parseInt(src2.toString());
+            emit(new MIPSInstruction(MIPSOp.ADDI, null,
+                new Register("$" + dest.toString(), true),
+                new Register(tmp, true),
+                new Imm(String.valueOf(negated), "DEC")));
+          }
         }
 
       }
