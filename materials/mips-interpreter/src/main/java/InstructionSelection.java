@@ -38,8 +38,7 @@ public class InstructionSelection {
         instructions.put(mipsIdx, instr);
         mipsIdx+=1;
         out.println("   " + instr);
-
-    } 
+    }
 
     //not sure if this structure is correct
     int count = 0;
@@ -172,9 +171,6 @@ public class InstructionSelection {
 
                 Register r1;
                 Register r2;
-
-          
-
                 if (src1 instanceof IRConstantOperand) {
                     String tmp = "$tmp" + count++;
                     //emit("li " + tmp1 + ", " + src1);
@@ -201,7 +197,6 @@ public class InstructionSelection {
                     new Register("$" + dest.toString(), true),
                     r1,
                     r2));
-
             }
 
             case DIV -> {
@@ -250,9 +245,7 @@ public class InstructionSelection {
                     new Register("$" + dest.toString(), true),
                     r1,
                     r2));
-
             }
-
             case AND -> {
                 IROperand dest = instr.operands[0];
                 IROperand src1 = instr.operands[1];
@@ -301,7 +294,6 @@ public class InstructionSelection {
                     r2));
 
             }
-
             case OR -> {
                 IROperand dest = instr.operands[0];
                 IROperand src1 = instr.operands[1];
@@ -357,10 +349,7 @@ public class InstructionSelection {
                 //addr is a memory address operand - which is a label
                 emit(new MIPSInstruction(MIPSOp.J, null, new Addr(labelName.toString()))
                 );
-
-
             }
-
             //the last two operands will be the same type
             case BREQ -> {
                 IROperand labelName = instr.operands[0];
@@ -610,7 +599,7 @@ public class InstructionSelection {
                 }
 
                 emit(new MIPSInstruction(MIPSOp.MOVE, null,
-                    new Register("v0", false), r)); //TODO: should this be virtual?
+                    new Register("$v0", false), r)); //TODO: should this be virtual?
 
                 emit(new MIPSInstruction(MIPSOp.JR, null,
                     new Register("$ra", false))); //TODO: show this be virtual?
@@ -619,20 +608,7 @@ public class InstructionSelection {
             case CALL -> {
                 IROperand funcOp = instr.operands[0];
 
-                // for (int i = 1; i < instr.operands.length; i++) {
-                //     String argReg = "$" + instr.operands[i];
-                //     if (instr.operands[i] instanceof IRConstantOperand) {
-                //         argReg = "$tmp" + count;
-                //         count += 1;
-                //         emit("li " + argReg + ", " + instr.operands[i]);
-                //     }
-                //     emit("addi $sp, $sp, -4");
-                //     emit("sw " + argReg + ", 0($sp)");
-                // }
-                // emit("jal " + funcOp);
-                // emit("addi $sp, $sp, " + (4 * (instr.operands.length - 1)));
-
-                Register sp = new Register("$sp", true); //TODO: should this be virtual?
+                Register sp = new Register("$sp", false);
 
                 for (int i = instr.operands.length - 1; i > 0; i--) { //pushing the args in reverse order
                     Register argReg;
@@ -662,21 +638,7 @@ public class InstructionSelection {
                 IROperand dest = instr.operands[0];
                 IROperand funcOp = instr.operands[1];
 
-                // for (int i = 2; i < instr.operands.length; i++) {
-                //     String argReg = "$" + instr.operands[i];
-                //     if (instr.operands[i] instanceof IRConstantOperand) {
-                //         argReg = "$tmp" + count;
-                //         count += 1;
-                //         emit("li " + argReg + ", " + instr.operands[i]);
-                //     }
-                //     emit("addi $sp, $sp, -4");
-                //     emit("sw " + argReg + ", 0($sp)");
-                // }
-                // emit("jal " + funcOp);
-                // emit("move $" + dest + ", $v0");
-                // emit("addi $sp, $sp, " + (4 * (instr.operands.length - 2)));
-
-                Register sp = new Register("$sp", true); //TODO: should this be virtual?
+                Register sp = new Register("$sp", false); //TODO: should this be virtual?
 
                 for (int i = instr.operands.length - 1; i > 1; i--) { //pushing the args in reverse order
                     Register argReg;
@@ -762,8 +724,6 @@ public class InstructionSelection {
                         new Register("$" + dest.toString(), true),
                         new Addr(new Imm("0", "DEC"), new Register("$" + idx.toString(), true))));
                 }
-
-
             }
             case LABEL -> {
                 IROperand labelName = instr.operands[0];
@@ -774,8 +734,4 @@ public class InstructionSelection {
 
         }
     }
-
-
-
-
 }
