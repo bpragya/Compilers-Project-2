@@ -97,7 +97,26 @@ public class NaiveAllocator{
             new Imm(String.valueOf(-frameSize), "DEC"))
             );
 
-        //3) For each instruction, load the operands / virtual registers into physical registers 
+        // Load parameters from caller's stack into local frame slots.
+        // After prologue: 0($fp)=saved $fp, 4($fp)=saved $ra, 8($fp)=arg1, 12($fp)=arg2, ...
+        for (int i = 0; i < func.parameters.size(); i++) {
+            String paramKey = "$" + func.parameters.get(i).getName();
+            if (!vrMap.containsKey(paramKey)) {
+                System.err.println("Warning: parameter '" + paramKey +
+                    "' in function '" + func.name +
+                    "' has no vrMap slot (never referenced in body) — skipping load");
+                continue;
+            }
+            Register t = new Register("$t0", false);
+            emit(new MIPSInstruction(MIPSOp.LW, null,
+                t,
+                new Addr(new Imm(String.valueOf(8 + i * 4), "DEC"), fp)));
+            emit(new MIPSInstruction(MIPSOp.SW, null,
+                t,
+                new Addr(new Imm(String.valueOf(vrMap.get(paramKey)), "DEC"), fp)));
+        }
+
+        //3) For each instruction, load the operands / virtual registers into physical registers
         // and output it in a MIPS instruction with the physical registers.
         
         for (MIPSInstruction inst : mipsProg.instructions.values()) {
