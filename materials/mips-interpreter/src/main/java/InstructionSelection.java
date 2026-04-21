@@ -307,7 +307,7 @@ public class InstructionSelection {
             r2));
 
       } // ---------------------------------------------------------------------
-      case GOTO -> { // TODO:
+      case GOTO -> {
         IROperand labelName = instr.operands[0];
         emit(new MIPSInstruction(MIPSOp.J, null, new Addr(labelName.toString())));
       }
@@ -482,11 +482,11 @@ public class InstructionSelection {
           }
 
           emit(new MIPSInstruction(MIPSOp.MOVE, null,
-              new Register("$v0", false), r)); // TODO: should this be virtual?
+              new Register("$v0", false), r));
         }
 
         emit(new MIPSInstruction(MIPSOp.JR, null,
-            new Register("$ra", false))); // TODO: show this be virtual?
+            new Register("$ra", false)));
 
       }
       case CALL -> {
@@ -522,7 +522,7 @@ public class InstructionSelection {
         IROperand dest = instr.operands[0];
         IROperand funcOp = instr.operands[1];
 
-        Register sp = new Register("$sp", false); // TODO: should this be virtual?
+        Register sp = new Register("$sp", false);
 
         for (int i = instr.operands.length - 1; i > 1; i--) { // pushing the args in reverse order
           Register argReg;
