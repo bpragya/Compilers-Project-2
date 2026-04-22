@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="ir_interpreter_clobber" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="IRInterpreter" />
+    <option name="PROGRAM_PARAMETERS" value="materials/public_test_cases/array_clobber/array_clobber.ir" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <module name="Project-2-Compilers" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

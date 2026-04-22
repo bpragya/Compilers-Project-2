@@ -1,0 +1,13 @@
+DESIGN-2.pdf
+
+# Build artifacts
+build/
+out/
+materials/mips-interpreter/target/
+materials/public_test_cases/float_sub/
+
+# IDE generated files
+materials/mips-interpreter/.classpath
+materials/mips-interpreter/.project
+materials/mips-interpreter/.settings/
+materials/mips-interpreter/pom.xml

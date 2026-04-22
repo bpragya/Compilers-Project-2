@@ -1,12 +1,14 @@
 import ir.IRFunction;
 import mips.MIPSInstruction;
 import mips.MIPSOp;
-import mips.MIPSProgram;
 import mips.operand.Addr;
 import mips.operand.Imm;
+import mips.operand.MIPSOperand;
 import mips.operand.Register;
 import java.io.PrintStream;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -16,159 +18,263 @@ import java.util.Map;
  */
 public class NaiveAllocator {
 
-    private final PrintStream out;
-    private final Map<Integer, MIPSInstruction> instructions;
-    private final Map<String, Integer> labels;
-    private int mipsIdx = 0;
+  private final PrintStream out;
+  private final Map<Integer, MIPSInstruction> instructions;
+  private final Map<String, Integer> labels;
+  private int mipsIdx = 0;
 
-    public NaiveAllocator(PrintStream out) {
-        this.out = out;
-        this.instructions = new HashMap<>();
-        this.labels = new HashMap<>();
+  /**
+   * @param out destination for the emitted MIPS assembly text
+   */
+  public NaiveAllocator(PrintStream out) {
+    this.out = out;
+    this.instructions = new HashMap<>();
+    this.labels = new HashMap<>();
+  }
+
+  /** Returns the emitted MIPS instructions indexed by emission order. */
+  public Map<Integer, MIPSInstruction> getInstructions() {
+    return instructions;
+  }
+
+  /** Returns the label-to-instruction-index map. */
+  public Map<String, Integer> getLabels() {
+    return labels;
+  }
+
+  /**
+   * Allocates registers for {@code func} using the naive spill-everything
+   * strategy and emits the resulting MIPS instructions.
+   *
+   * @param func              the IR function being compiled
+   * @param inputInstructions the unallocated instructions produced by instruction selection
+   */
+  public void allocate(IRFunction func, Map<Integer, MIPSInstruction> inputInstructions) {
+    Register sp = new Register("$sp", false);
+    Register fp = new Register("$fp", false);
+    Register ra = new Register("$ra", false);
+
+    emitPrologue(sp, fp, ra);
+
+    Map<String, Integer> vrMap = buildVrMap(inputInstructions);
+    int frameSize = 4 * vrMap.size();
+    emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp,
+        new Imm(String.valueOf(-frameSize), "DEC")));
+
+    loadParameters(func, vrMap, fp);
+    String epilogueLabel = func.name + "_epilogue";
+    emitBody(inputInstructions, vrMap, fp, epilogueLabel);
+    emitEpilogue(sp, fp, ra, epilogueLabel);
+  }
+
+  // -------------------------------------------------------------------------
+  // Private helpers
+  // -------------------------------------------------------------------------
+
+  /**
+   * Records {@code instr} in the instruction map and prints it to {@code out}.
+   * If the instruction carries a label, that label is registered in the labels
+   * map so jump targets can be resolved at interpreter runtime.
+   */
+  private void emit(MIPSInstruction instr) {
+    if (instr.label != null) {
+      labels.put(instr.label, mipsIdx);
     }
+    instructions.put(mipsIdx++, instr);
+    out.println("   " + instr);
+  }
 
-    /** Returns the emitted MIPS instructions indexed by emission order. */
-    public Map<Integer, MIPSInstruction> getInstructions() {
-        return instructions;
-    }
+  /**
+   * Emits the standard MIPS function prologue: saves {@code $ra} and {@code $fp}
+   * on the stack, then sets {@code $fp} to the current stack pointer.
+   */
+  private void emitPrologue(Register sp, Register fp, Register ra) {
+    emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("-4", "DEC")));
+    emit(new MIPSInstruction(MIPSOp.SW, null, ra, new Addr(new Imm("0", "DEC"), sp)));
+    emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("-4", "DEC")));
+    emit(new MIPSInstruction(MIPSOp.SW, null, fp, new Addr(new Imm("0", "DEC"), sp)));
+    emit(new MIPSInstruction(MIPSOp.MOVE, null, fp, sp));
+  }
 
-    /** Returns the label-to-instruction-index map. */
-    public Map<String, Integer> getLabels() {
-        return labels;
-    }
+  /**
+   * Scans {@code instructions} and assigns each unique virtual register a distinct
+   * fp-relative stack slot, starting at {@code -4($fp)} and growing downward.
+   *
+   * @return map from virtual register name to its fp-relative byte offset
+   */
+  private Map<String, Integer> buildVrMap(Map<Integer, MIPSInstruction> instructions) {
+    Map<String, Integer> vrMap = new HashMap<>();
+    int offset = -4;
 
-    /**
-     * Allocates registers for {@code func} using the naive spill-everything
-     * strategy and emits the resulting MIPS instructions.
-     *
-     * @param func     the IR function being compiled
-     * @param mipsProg the unallocated MIPS program produced by instruction selection
-     */
-    public void allocate(IRFunction func, MIPSProgram mipsProg) {
-        Register sp = new Register("$sp", false);
-        Register fp = new Register("$fp", false);
-        Register ra = new Register("$ra", false);
-
-        emitPrologue(sp, fp, ra);
-
-        Map<String, Integer> vrMap = buildVrMap(mipsProg);
-        int frameSize = 4 * vrMap.size();
-        emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp,
-                new Imm(String.valueOf(-frameSize), "DEC")));
-
-        loadParameters(func, vrMap, fp);
-        emitBody(mipsProg, vrMap, sp, fp);
-        emitEpilogue(sp, fp, ra);
-    }
-
-    // -------------------------------------------------------------------------
-    // Private helpers
-    // -------------------------------------------------------------------------
-
-    private void emit(MIPSInstruction instr) {
-        instructions.put(mipsIdx++, instr);
-        out.println("   " + instr);
-    }
-
-    private void emitPrologue(Register sp, Register fp, Register ra) {
-        emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("-4", "DEC")));
-        emit(new MIPSInstruction(MIPSOp.SW,   null, ra, new Addr(new Imm("0", "DEC"), sp)));
-        emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("-4", "DEC")));
-        emit(new MIPSInstruction(MIPSOp.SW,   null, fp, new Addr(new Imm("0", "DEC"), sp)));
-        emit(new MIPSInstruction(MIPSOp.MOVE, null, fp, sp));
-    }
-
-    private Map<String, Integer> buildVrMap(MIPSProgram mipsProg) {
-        Map<String, Integer> vrMap = new HashMap<>();
-        int offset = -4;
-
-        for (MIPSInstruction inst : mipsProg.instructions.values()) {
-            for (Register r : inst.getReads()) {
-                if (r.isVirtual && !vrMap.containsKey(r.name)) {
-                    vrMap.put(r.name, offset);
-                    offset -= 4;
-                }
-            }
-            Register w = inst.getWrite();
-            if (w != null && w.isVirtual && !vrMap.containsKey(w.name)) {
-                vrMap.put(w.name, offset);
-                offset -= 4;
-            }
+    for (MIPSInstruction inst : instructions.values()) {
+      for (Register r : inst.getReads()) {
+        if (r.isVirtual && !vrMap.containsKey(r.name)) {
+          vrMap.put(r.name, offset);
+          offset -= 4;
         }
-
-        return vrMap;
+      }
+      Register w = inst.getWrite();
+      if (w != null && w.isVirtual && !vrMap.containsKey(w.name)) {
+        vrMap.put(w.name, offset);
+        offset -= 4;
+      }
     }
 
-    private void loadParameters(IRFunction func, Map<String, Integer> vrMap, Register fp) {
-        for (int i = 0; i < func.parameters.size(); i++) {
-            String paramKey = "$" + func.parameters.get(i).getName();
-            if (!vrMap.containsKey(paramKey)) {
-                System.err.println("Warning: parameter '" + paramKey +
-                        "' in function '" + func.name +
-                        "' has no vrMap slot (never referenced in body) — skipping load");
-                continue;
-            }
-            Register t = new Register("$t0", false);
-            emit(new MIPSInstruction(MIPSOp.LW, null, t,
-                    new Addr(new Imm(String.valueOf(8 + i * 4), "DEC"), fp)));
-            emit(new MIPSInstruction(MIPSOp.SW, null, t,
-                    new Addr(new Imm(String.valueOf(vrMap.get(paramKey)), "DEC"), fp)));
-        }
+    return vrMap;
+  }
+
+  /**
+   * Copies each incoming argument from its ABI-defined caller stack slot
+   * ({@code 8+i*4($fp)}) into the corresponding virtual register's spill slot.
+   * Parameters not referenced in the function body are skipped with a warning.
+   */
+  private void loadParameters(IRFunction func, Map<String, Integer> vrMap, Register fp) {
+    for (int i = 0; i < func.parameters.size(); i++) {
+      String paramKey = "$" + func.parameters.get(i).getName();
+      if (!vrMap.containsKey(paramKey)) {
+        System.err.println("Warning: parameter '" + paramKey +
+            "' in function '" + func.name +
+            "' has no vrMap slot (never referenced in body) — skipping load");
+        continue;
+      }
+      Register t = new Register("$t0", false);
+      emit(new MIPSInstruction(MIPSOp.LW, null, t,
+          new Addr(new Imm(String.valueOf(8 + i * 4), "DEC"), fp)));
+      emit(new MIPSInstruction(MIPSOp.SW, null, t,
+          new Addr(new Imm(String.valueOf(vrMap.get(paramKey)), "DEC"), fp)));
+    }
+  }
+
+  /**
+   * Emits physical instructions for every instruction in {@code instructions}.
+   * {@code JR} instructions from RETURN are rewritten to {@code J epilogueLabel}
+   * so the epilogue's stack-cleanup always runs before returning; all others are
+   * handled by {@link #emitWithSpill}.
+   */
+  private void emitBody(Map<Integer, MIPSInstruction> instructions, Map<String, Integer> vrMap,
+      Register fp, String epilogueLabel) {
+    for (MIPSInstruction inst : instructions.values()) {
+      if (inst.op == MIPSOp.JR) {
+        emit(new MIPSInstruction(MIPSOp.J, inst.label, new Addr(epilogueLabel)));
+      } else {
+        emitWithSpill(inst, vrMap, fp);
+      }
+    }
+  }
+
+  /**
+   * Emits a single non-call instruction with full spill support:
+   * <ol>
+   * <li>LW each virtual read register from its stack slot into a {@code $t}
+   * temporary.</li>
+   * <li>Emit the instruction itself with all virtual registers replaced by those
+   * temporaries.</li>
+   * <li>SW the result temporary back to the write register's stack slot.</li>
+   * </ol>
+   * Physical registers that appear as reads are passed through unchanged.
+   */
+  private void emitWithSpill(MIPSInstruction inst, Map<String, Integer> vrMap,
+      Register fp) {
+    Register[] reads = inst.getReads();
+    Register[] physReads = new Register[reads.length];
+    int count = 0;
+
+    for (int i = 0; i < reads.length; i++) {
+      Register r = reads[i];
+      if (r.isVirtual) {
+        physReads[i] = new Register("$t" + count, false);
+        emit(new MIPSInstruction(MIPSOp.LW, null,
+            physReads[i],
+            new Addr(new Imm(String.valueOf(vrMap.get(r.name)), "DEC"), fp)));
+        count++;
+      } else {
+        physReads[i] = r;
+      }
     }
 
-    private void emitBody(MIPSProgram mipsProg, Map<String, Integer> vrMap,
-                          Register sp, Register fp) {
-        for (MIPSInstruction inst : mipsProg.instructions.values()) {
-            if (inst.op == MIPSOp.JAL) {
-                emitCallWithSave(inst, sp);
-            } else {
-                emitWithSpill(inst, vrMap, fp);
-            }
-        }
+    Register w = inst.getWrite();
+    Register physWrite = (w != null && w.isVirtual) ? new Register("$t" + count, false) : w;
+
+    emit(substituteRegisters(inst, physReads, physWrite));
+
+    if (w != null && w.isVirtual) {
+      emit(new MIPSInstruction(MIPSOp.SW, null,
+          physWrite,
+          new Addr(new Imm(String.valueOf(vrMap.get(w.name)), "DEC"), fp)));
     }
+  }
 
-    private void emitCallWithSave(MIPSInstruction callInst, Register sp) {
-        for (int i = 0; i < 10; i++) {
-            emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("-4", "DEC")));
-            emit(new MIPSInstruction(MIPSOp.SW, null,
-                    new Register("$t" + i, false),
-                    new Addr(new Imm("0", "DEC"), sp)));
-        }
-
-        emit(callInst);
-
-        for (int i = 9; i >= 0; i--) {
-            emit(new MIPSInstruction(MIPSOp.LW, null,
-                    new Register("$t" + i, false),
-                    new Addr(new Imm("0", "DEC"), sp)));
-            emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("4", "DEC")));
-        }
+  /**
+   * Returns a copy of {@code inst} with every virtual register replaced by its
+   * corresponding physical register from {@code physReads} and {@code physWrite}.
+   * The substitution is driven by the name mapping derived from
+   * {@link MIPSInstruction#getReads()} and {@link MIPSInstruction#getWrite()},
+   * so no opcode-specific logic is needed here.
+   *
+   * @param inst      the instruction whose registers are to be substituted
+   * @param physReads physical registers to substitute for each read, in order
+   * @param physWrite physical register to substitute for the write, or
+   *                  {@code null}
+   * @return a new instruction with the same opcode, label, and substituted
+   *         operands
+   */
+  private static MIPSInstruction substituteRegisters(
+      MIPSInstruction inst, Register[] physReads, Register physWrite) {
+    Register[] virtualReads = inst.getReads();
+    Map<String, Register> sub = new HashMap<>();
+    for (int i = 0; i < virtualReads.length; i++) {
+      sub.put(virtualReads[i].name, physReads[i]);
     }
-
-    private void emitWithSpill(MIPSInstruction inst, Map<String, Integer> vrMap,
-                               Register fp) {
-        int count = 0;
-        for (Register r : inst.getReads()) {
-            emit(new MIPSInstruction(MIPSOp.LW, null,
-                    new Register("$t" + count, false),
-                    new Addr(new Imm(String.valueOf(vrMap.get(r.name)), "DEC"), fp)));
-            count++;
-        }
-
-        Register w = inst.getWrite();
-        if (w != null && w.isVirtual) {
-            emit(new MIPSInstruction(MIPSOp.SW, null,
-                    new Register("$t" + count, false),
-                    new Addr(new Imm(String.valueOf(vrMap.get(w.name)), "DEC"), fp)));
-        }
+    Register virtualWrite = inst.getWrite();
+    if (virtualWrite != null && physWrite != null) {
+      sub.put(virtualWrite.name, physWrite);
     }
-
-    private void emitEpilogue(Register sp, Register fp, Register ra) {
-        emit(new MIPSInstruction(MIPSOp.MOVE, null, sp, fp));
-        emit(new MIPSInstruction(MIPSOp.LW,   null, fp, new Addr(new Imm("0", "DEC"), sp)));
-        emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("4", "DEC")));
-        emit(new MIPSInstruction(MIPSOp.LW,   null, ra, new Addr(new Imm("0", "DEC"), sp)));
-        emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("4", "DEC")));
-        emit(new MIPSInstruction(MIPSOp.JR,   null, ra));
+    List<MIPSOperand> newOps = new ArrayList<>();
+    for (MIPSOperand op : inst.operands) {
+      newOps.add(substituteOperand(op, sub));
     }
+    return new MIPSInstruction(inst.op, inst.label, newOps.toArray(new MIPSOperand[0]));
+  }
+
+  /**
+   * Applies {@code sub} to a single operand. {@link Register} operands are
+   * replaced directly; the base register inside an {@link Addr} operand is
+   * replaced while preserving the address mode and offset. All other operand
+   * types (e.g. {@link Imm}, PC-relative labels) are returned unchanged.
+   *
+   * @param operand the operand to substitute into
+   * @param sub     map from virtual register name to its physical replacement
+   * @return the substituted operand, or the original if no substitution applies
+   */
+  private static MIPSOperand substituteOperand(MIPSOperand operand, Map<String, Register> sub) {
+    if (operand instanceof Register) {
+      Register r = (Register) operand;
+      return sub.getOrDefault(r.name, r);
+    }
+    if (operand instanceof Addr) {
+      Addr addr = (Addr) operand;
+      if (addr.register == null)
+        return addr;
+      Register newReg = sub.getOrDefault(addr.register.name, addr.register);
+      return addr.mode == Addr.Mode.BASE_OFFSET
+          ? new Addr(addr.constant, newReg)
+          : new Addr(newReg);
+    }
+    return operand;
+  }
+
+  /**
+   * Emits the standard MIPS function epilogue labelled with {@code epilogueLabel}
+   * so that {@code J epilogueLabel} jumps from RETURN sites reach it: restores
+   * {@code $sp} from {@code $fp}, then restores {@code $fp} and {@code $ra}
+   * from the stack before returning via {@code JR $ra}.
+   */
+  private void emitEpilogue(Register sp, Register fp, Register ra, String epilogueLabel) {
+    emit(new MIPSInstruction(MIPSOp.MOVE, epilogueLabel, sp, fp));
+    emit(new MIPSInstruction(MIPSOp.LW, null, fp, new Addr(new Imm("0", "DEC"), sp)));
+    emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("4", "DEC")));
+    emit(new MIPSInstruction(MIPSOp.LW, null, ra, new Addr(new Imm("0", "DEC"), sp)));
+    emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("4", "DEC")));
+    emit(new MIPSInstruction(MIPSOp.JR, null, ra));
+  }
 }
