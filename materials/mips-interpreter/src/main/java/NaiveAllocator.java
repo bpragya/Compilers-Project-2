@@ -47,7 +47,8 @@ public class NaiveAllocator {
    * strategy and emits the resulting MIPS instructions.
    *
    * @param func              the IR function being compiled
-   * @param inputInstructions the unallocated instructions produced by instruction selection
+   * @param inputInstructions the unallocated instructions produced by instruction
+   *                          selection
    */
   public void allocate(IRFunction func, Map<Integer, MIPSInstruction> inputInstructions) {
     Register sp = new Register("$sp", false);
@@ -97,7 +98,8 @@ public class NaiveAllocator {
   }
 
   /**
-   * Scans {@code instructions} and assigns each unique virtual register a distinct
+   * Scans {@code instructions} and assigns each unique virtual register a
+   * distinct
    * fp-relative stack slot, starting at {@code -4($fp)} and growing downward.
    *
    * @return map from virtual register name to its fp-relative byte offset
