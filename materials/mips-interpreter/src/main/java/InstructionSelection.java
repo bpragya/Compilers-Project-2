@@ -212,7 +212,7 @@ public class InstructionSelection {
     IROperand dest = instr.operands[0];
     Register r1 = resolveToRegister(instr.operands[1]);
     Register r2 = resolveToRegister(instr.operands[2]);
-    if (((IRVariableOperand) dest).type instanceof IRFloatType) {
+    if (dest instanceof IRVariableOperand && ((IRVariableOperand) dest).type instanceof IRFloatType) {
       if (op == MIPSOp.MUL)
         op = MIPSOp.MUL_S;
       else if (op == MIPSOp.DIV)

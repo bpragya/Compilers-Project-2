@@ -165,28 +165,26 @@ public class NaiveAllocator {
   }
 
   /**
-   * Emits a single non-call instruction with full spill support:
-   * <ol>
-   * <li>LW each virtual read register from its stack slot into a {@code $t}
-   * temporary.</li>
-   * <li>Emit the instruction itself with all virtual registers replaced by those
-   * temporaries.</li>
-   * <li>SW the result temporary back to the write register's stack slot.</li>
-   * </ol>
-   * Physical registers that appear as reads are passed through unchanged.
+   * Emits a single instruction with full spill support: loads virtual reads
+   * into {@code $t} temporaries, emits the instruction with physical registers
+   * substituted, then stores the result back to the write register's stack slot.
+   * The instruction's label (if any) is attached to the first emitted LW so
+   * that branch targets land before the loads, not after.
    */
   private void emitWithSpill(MIPSInstruction inst, Map<String, Integer> vrMap,
       Register fp) {
     Register[] reads = inst.getReads();
     Register[] physReads = new Register[reads.length];
     int count = 0;
+    String pendingLbl = inst.label;
 
     for (int i = 0; i < reads.length; i++) {
       Register r = reads[i];
-      if (r.isVirtual) {
+      if (r != null && r.isVirtual) {
         physReads[i] = new Register("$t" + count, false);
-        emit(new MIPSInstruction(MIPSOp.LW, null,
-            physReads[i],
+        String lbl = pendingLbl;
+        pendingLbl = null;
+        emit(new MIPSInstruction(MIPSOp.LW, lbl, physReads[i],
             new Addr(new Imm(String.valueOf(vrMap.get(r.name)), "DEC"), fp)));
         count++;
       } else {
@@ -195,13 +193,29 @@ public class NaiveAllocator {
     }
 
     Register w = inst.getWrite();
-    Register physWrite = (w != null && w.isVirtual) ? new Register("$t" + count, false) : w;
+    Register physWrite;
+    if (w != null && w.isVirtual) {
+      int aliasIdx = -1;
+      for (int i = 0; i < reads.length; i++) {
+        if (reads[i] != null && reads[i].isVirtual && reads[i].name.equals(w.name)) {
+          aliasIdx = i;
+          break;
+        }
+      }
+      physWrite = (aliasIdx >= 0) ? physReads[aliasIdx] : new Register("$t" + count, false);
+    } else {
+      physWrite = w;
+    }
 
-    emit(substituteRegisters(inst, physReads, physWrite));
+    MIPSInstruction physInst = substituteRegisters(inst, physReads, physWrite);
+    if (pendingLbl == null && inst.label != null) {
+      physInst = new MIPSInstruction(physInst.op, null,
+          physInst.operands.toArray(new MIPSOperand[0]));
+    }
+    emit(physInst);
 
     if (w != null && w.isVirtual) {
-      emit(new MIPSInstruction(MIPSOp.SW, null,
-          physWrite,
+      emit(new MIPSInstruction(MIPSOp.SW, null, physWrite,
           new Addr(new Imm(String.valueOf(vrMap.get(w.name)), "DEC"), fp)));
     }
   }
