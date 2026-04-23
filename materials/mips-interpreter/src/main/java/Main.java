@@ -45,7 +45,7 @@ public class Main {
       }
 
       out.println(func.name + ":");
-      NaiveAllocator allocator = new NaiveAllocator(out);
+      IntrablockAllocator allocator = new IntrablockAllocator(out);
       allocator.allocate(func, is.getInstructions(), is.getPendingLabel());
     }
 
