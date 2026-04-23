@@ -90,8 +90,7 @@ public class NaiveAllocator {
       nextArrayBase += ((IRArrayType) var.type).getSize() * 4;
     }
 
-    emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp,
-        new Imm(String.valueOf(-(frameSize + totalArrayDataSize)), "DEC")));
+    emitAddImm(sp, sp, -(frameSize + totalArrayDataSize));
 
     loadParameters(func, vrMap, fp);
     initArrays(arrayBaseOffsets, vrMap, fp);
@@ -126,8 +125,7 @@ public class NaiveAllocator {
       int dataFpOffset = entry.getValue();
       if (!vrMap.containsKey(varKey))
         continue;
-      emit(new MIPSInstruction(MIPSOp.ADDI, null, t0, fp,
-          new Imm(String.valueOf(dataFpOffset), "DEC")));
+      emitAddImm(t0, fp, dataFpOffset);
       emit(new MIPSInstruction(MIPSOp.SW, null, t0,
           new Addr(new Imm(String.valueOf(vrMap.get(varKey)), "DEC"), fp)));
     }
@@ -162,6 +160,23 @@ public class NaiveAllocator {
         return true;
       default:
         return false;
+    }
+  }
+
+  /**
+   * Emits {@code dest = src + imm}, using {@code ADDI} when {@code imm} fits in
+   * a 16-bit signed immediate and {@code LI} + {@code ADD}/{@code SUB} otherwise.
+   */
+  private void emitAddImm(Register dest, Register src, int imm) {
+    if (imm >= -32768 && imm <= 32767) {
+      emit(new MIPSInstruction(MIPSOp.ADDI, null, dest, src,
+          new Imm(String.valueOf(imm), "DEC")));
+    } else {
+      Register tmp = new Register("$t9", false);
+      emit(new MIPSInstruction(MIPSOp.LI, null, tmp,
+          new Imm(String.valueOf(Math.abs(imm)), "DEC")));
+      MIPSOp op = imm < 0 ? MIPSOp.SUB : MIPSOp.ADD;
+      emit(new MIPSInstruction(op, null, dest, src, tmp));
     }
   }
 
