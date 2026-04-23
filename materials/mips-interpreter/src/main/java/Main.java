@@ -34,6 +34,9 @@ public class Main {
 
     out.println("  .text");
     out.println("  .globl main");
+    out.println("   jal main");
+    out.println("   li $v0, 10");
+    out.println("   syscall");
 
     for (IRFunction func : program.functions) {
       InstructionSelection is = new InstructionSelection(devNull);
@@ -43,9 +46,10 @@ public class Main {
 
       out.println(func.name + ":");
       NaiveAllocator allocator = new NaiveAllocator(out);
-      allocator.allocate(func, is.getInstructions());
+      allocator.allocate(func, is.getInstructions(), is.getPendingLabel());
     }
 
+    Intrinsics.emit(out);
     out.flush();
     out.close();
   }

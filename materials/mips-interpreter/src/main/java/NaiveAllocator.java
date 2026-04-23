@@ -1,4 +1,6 @@
 import ir.IRFunction;
+import ir.datatype.IRArrayType;
+import ir.operand.IRVariableOperand;
 import mips.MIPSInstruction;
 import mips.MIPSOp;
 import mips.operand.Addr;
@@ -8,8 +10,11 @@ import mips.operand.Register;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Performs naive register allocation by spilling all virtual registers to the
@@ -51,6 +56,10 @@ public class NaiveAllocator {
    *                          selection
    */
   public void allocate(IRFunction func, Map<Integer, MIPSInstruction> inputInstructions) {
+    allocate(func, inputInstructions, null);
+  }
+
+  public void allocate(IRFunction func, Map<Integer, MIPSInstruction> inputInstructions, String trailingLabel) {
     Register sp = new Register("$sp", false);
     Register fp = new Register("$fp", false);
     Register ra = new Register("$ra", false);
@@ -59,12 +68,36 @@ public class NaiveAllocator {
 
     Map<String, Integer> vrMap = buildVrMap(inputInstructions);
     int frameSize = 4 * vrMap.size();
+
+    Set<String> paramNames = new HashSet<>();
+    for (IRVariableOperand p : func.parameters)
+      paramNames.add(p.getName());
+
+    int totalArrayDataSize = 0;
+    List<IRVariableOperand> localArrayVars = new ArrayList<>();
+    for (IRVariableOperand var : func.variables) {
+      if (var.type instanceof IRArrayType && !paramNames.contains(var.getName())) {
+        localArrayVars.add(var);
+        totalArrayDataSize += ((IRArrayType) var.type).getSize() * 4;
+      }
+    }
+
+    Map<String, Integer> arrayBaseOffsets = new LinkedHashMap<>();
+    int nextArrayBase = -(frameSize + totalArrayDataSize);
+    for (IRVariableOperand var : localArrayVars) {
+      String key = "$" + var.getName();
+      arrayBaseOffsets.put(key, nextArrayBase);
+      nextArrayBase += ((IRArrayType) var.type).getSize() * 4;
+    }
+
     emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp,
-        new Imm(String.valueOf(-frameSize), "DEC")));
+        new Imm(String.valueOf(-(frameSize + totalArrayDataSize)), "DEC")));
 
     loadParameters(func, vrMap, fp);
+    initArrays(arrayBaseOffsets, vrMap, fp);
+    Set<String> floatVrs = buildFloatSet(inputInstructions);
     String epilogueLabel = func.name + "_epilogue";
-    emitBody(inputInstructions, vrMap, fp, epilogueLabel);
+    emitBody(inputInstructions, vrMap, fp, epilogueLabel, trailingLabel, floatVrs);
     emitEpilogue(sp, fp, ra, epilogueLabel);
   }
 
@@ -83,6 +116,53 @@ public class NaiveAllocator {
     }
     instructions.put(mipsIdx++, instr);
     out.println("   " + instr);
+  }
+
+  private void initArrays(Map<String, Integer> arrayBaseOffsets,
+      Map<String, Integer> vrMap, Register fp) {
+    Register t0 = new Register("$t0", false);
+    for (Map.Entry<String, Integer> entry : arrayBaseOffsets.entrySet()) {
+      String varKey = entry.getKey();
+      int dataFpOffset = entry.getValue();
+      if (!vrMap.containsKey(varKey))
+        continue;
+      emit(new MIPSInstruction(MIPSOp.ADDI, null, t0, fp,
+          new Imm(String.valueOf(dataFpOffset), "DEC")));
+      emit(new MIPSInstruction(MIPSOp.SW, null, t0,
+          new Addr(new Imm(String.valueOf(vrMap.get(varKey)), "DEC"), fp)));
+    }
+  }
+
+  private Set<String> buildFloatSet(Map<Integer, MIPSInstruction> instructions) {
+    Set<String> floats = new HashSet<>();
+    for (MIPSInstruction inst : instructions.values()) {
+      if (isFloatOp(inst.op)) {
+        for (Register r : inst.getReads()) {
+          if (r != null && r.isVirtual)
+            floats.add(r.name);
+        }
+        Register w = inst.getWrite();
+        if (w != null && w.isVirtual)
+          floats.add(w.name);
+      }
+    }
+    return floats;
+  }
+
+  private boolean isFloatOp(MIPSOp op) {
+    switch (op) {
+      case LI_S:
+      case L_S:
+      case S_S:
+      case MOV_S:
+      case ADD_S:
+      case SUB_S:
+      case MUL_S:
+      case DIV_S:
+        return true;
+      default:
+        return false;
+    }
   }
 
   /**
@@ -154,39 +234,43 @@ public class NaiveAllocator {
    * handled by {@link #emitWithSpill}.
    */
   private void emitBody(Map<Integer, MIPSInstruction> instructions, Map<String, Integer> vrMap,
-      Register fp, String epilogueLabel) {
+      Register fp, String epilogueLabel, String trailingLabel, Set<String> floatVrs) {
     for (MIPSInstruction inst : instructions.values()) {
       if (inst.op == MIPSOp.JR) {
         emit(new MIPSInstruction(MIPSOp.J, inst.label, new Addr(epilogueLabel)));
       } else {
-        emitWithSpill(inst, vrMap, fp);
+        emitWithSpill(inst, vrMap, fp, floatVrs);
       }
+    }
+    if (trailingLabel != null) {
+      emit(new MIPSInstruction(MIPSOp.J, trailingLabel, new Addr(epilogueLabel)));
     }
   }
 
-  /**
-   * Emits a single instruction with full spill support: loads virtual reads
-   * into {@code $t} temporaries, emits the instruction with physical registers
-   * substituted, then stores the result back to the write register's stack slot.
-   * The instruction's label (if any) is attached to the first emitted LW so
-   * that branch targets land before the loads, not after.
-   */
   private void emitWithSpill(MIPSInstruction inst, Map<String, Integer> vrMap,
-      Register fp) {
+      Register fp, Set<String> floatVrs) {
     Register[] reads = inst.getReads();
     Register[] physReads = new Register[reads.length];
-    int count = 0;
+    int intCount = 0;
+    int floatCount = 0;
     String pendingLbl = inst.label;
 
     for (int i = 0; i < reads.length; i++) {
       Register r = reads[i];
       if (r != null && r.isVirtual) {
-        physReads[i] = new Register("$t" + count, false);
         String lbl = pendingLbl;
         pendingLbl = null;
-        emit(new MIPSInstruction(MIPSOp.LW, lbl, physReads[i],
-            new Addr(new Imm(String.valueOf(vrMap.get(r.name)), "DEC"), fp)));
-        count++;
+        if (floatVrs.contains(r.name)) {
+          physReads[i] = new Register("$f" + (floatCount * 2), false);
+          emit(new MIPSInstruction(MIPSOp.L_S, lbl, physReads[i],
+              new Addr(new Imm(String.valueOf(vrMap.get(r.name)), "DEC"), fp)));
+          floatCount++;
+        } else {
+          physReads[i] = new Register("$t" + intCount, false);
+          emit(new MIPSInstruction(MIPSOp.LW, lbl, physReads[i],
+              new Addr(new Imm(String.valueOf(vrMap.get(r.name)), "DEC"), fp)));
+          intCount++;
+        }
       } else {
         physReads[i] = r;
       }
@@ -202,7 +286,13 @@ public class NaiveAllocator {
           break;
         }
       }
-      physWrite = (aliasIdx >= 0) ? physReads[aliasIdx] : new Register("$t" + count, false);
+      if (aliasIdx >= 0) {
+        physWrite = physReads[aliasIdx];
+      } else if (floatVrs.contains(w.name)) {
+        physWrite = new Register("$f" + (floatCount * 2), false);
+      } else {
+        physWrite = new Register("$t" + intCount, false);
+      }
     } else {
       physWrite = w;
     }
@@ -215,7 +305,8 @@ public class NaiveAllocator {
     emit(physInst);
 
     if (w != null && w.isVirtual) {
-      emit(new MIPSInstruction(MIPSOp.SW, null, physWrite,
+      MIPSOp storeOp = floatVrs.contains(w.name) ? MIPSOp.S_S : MIPSOp.SW;
+      emit(new MIPSInstruction(storeOp, null, physWrite,
           new Addr(new Imm(String.valueOf(vrMap.get(w.name)), "DEC"), fp)));
     }
   }

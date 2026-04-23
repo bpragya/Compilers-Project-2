@@ -44,6 +44,11 @@ public class InstructionSelection {
     return labels;
   }
 
+  /** Returns any label that was not yet attached to an instruction (trailing label at end of function). */
+  public String getPendingLabel() {
+    return pendingLabel;
+  }
+
   /**
    * Translates {@code instr} and emits the resulting MIPS instruction(s).
    *
@@ -72,6 +77,9 @@ public class InstructionSelection {
       case ARRAY_LOAD -> emitArrayLoad(instr);
       case LABEL -> {
         String labelName = instr.operands[0].toString();
+        if (pendingLabel != null) {
+          emit(new MIPSInstruction(MIPSOp.J, null, new Addr(labelName)));
+        }
         labels.put(labelName, mipsIdx);
         pendingLabel = labelName;
       }
@@ -230,9 +238,13 @@ public class InstructionSelection {
 
   private void emitReturn(IRInstruction instr) {
     if (instr.operands != null && instr.operands.length > 0) {
-      Register r = resolveToRegister(instr.operands[0]);
-      emit(new MIPSInstruction(MIPSOp.MOVE, null,
-          new Register("$v0", false), r));
+      IROperand retVal = instr.operands[0];
+      Register r = resolveToRegister(retVal);
+      if (isFloatOperand(retVal)) {
+        emit(new MIPSInstruction(MIPSOp.MOV_S, null, new Register("$f0", false), r));
+      } else {
+        emit(new MIPSInstruction(MIPSOp.MOVE, null, new Register("$v0", false), r));
+      }
     }
     emit(new MIPSInstruction(MIPSOp.JR, null, new Register("$ra", false)));
   }
@@ -252,7 +264,11 @@ public class InstructionSelection {
     Register sp = new Register("$sp", false);
     pushArgsToStack(instr, 2, sp);
     emit(new MIPSInstruction(MIPSOp.JAL, null, new Addr(instr.operands[1].toString())));
-    emit(new MIPSInstruction(MIPSOp.MOVE, null, vr(dest), new Register("$v0", false)));
+    if (dest instanceof IRVariableOperand && ((IRVariableOperand) dest).type instanceof IRFloatType) {
+      emit(new MIPSInstruction(MIPSOp.MOV_S, null, vr(dest), new Register("$f0", false)));
+    } else {
+      emit(new MIPSInstruction(MIPSOp.MOVE, null, vr(dest), new Register("$v0", false)));
+    }
     int argCount = instr.operands.length - 2;
     if (argCount > 0)
       emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp,
@@ -261,11 +277,19 @@ public class InstructionSelection {
 
   private void pushArgsToStack(IRInstruction instr, int firstArgIdx, Register sp) {
     for (int i = instr.operands.length - 1; i >= firstArgIdx; i--) {
-      Register argReg = resolveToRegister(instr.operands[i]);
+      IROperand arg = instr.operands[i];
+      Register argReg = resolveToRegister(arg);
       emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp, new Imm("-4", "DEC")));
-      emit(new MIPSInstruction(MIPSOp.SW, null, argReg,
+      MIPSOp storeOp = isFloatOperand(arg) ? MIPSOp.S_S : MIPSOp.SW;
+      emit(new MIPSInstruction(storeOp, null, argReg,
           new Addr(new Imm("0", "DEC"), sp)));
     }
+  }
+
+  private boolean isFloatOperand(IROperand op) {
+    if (op instanceof IRVariableOperand) return ((IRVariableOperand) op).type instanceof IRFloatType;
+    if (op instanceof IRConstantOperand) return ((IRConstantOperand) op).type instanceof IRFloatType;
+    return false;
   }
 
   private void emitArrayStore(IRInstruction instr) {
@@ -273,9 +297,10 @@ public class InstructionSelection {
     IROperand arr = instr.operands[1];
     IROperand idx = instr.operands[2];
 
+    Register srcReg = resolveToRegister(src);
     if (idx instanceof IRConstantOperand) {
       int offset = 4 * Integer.parseInt(((IRConstantOperand) idx).getValueString());
-      emit(new MIPSInstruction(MIPSOp.SW, null, vr(src),
+      emit(new MIPSInstruction(MIPSOp.SW, null, srcReg,
           new Addr(new Imm(String.valueOf(offset), "DEC"), vr(arr))));
     } else {
       String addrTmp = "$__addr" + addrTmpCounter++;
@@ -283,7 +308,7 @@ public class InstructionSelection {
           new Register(addrTmp, true), vr(idx), new Imm("2", "DEC")));
       emit(new MIPSInstruction(MIPSOp.ADD, null,
           new Register(addrTmp, true), vr(arr), new Register(addrTmp, true)));
-      emit(new MIPSInstruction(MIPSOp.SW, null, vr(src),
+      emit(new MIPSInstruction(MIPSOp.SW, null, srcReg,
           new Addr(new Imm("0", "DEC"), new Register(addrTmp, true))));
     }
   }
