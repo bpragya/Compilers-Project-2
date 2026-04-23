@@ -12,7 +12,10 @@ import java.io.PrintStream;
 
 public class Main {
   public static void main(String[] args) throws FileNotFoundException, IRException {
-    if (args.length < 2) {
+
+    String allocatorFlag = args[2];
+
+    if (args.length < 3) {
       System.err.println("Usage: Main <path-to-ir-file> <path-to-output-s-file>");
       System.exit(1);
     }
@@ -45,8 +48,23 @@ public class Main {
       }
 
       out.println(func.name + ":");
-      IntrablockAllocator allocator = new IntrablockAllocator(out);
-      allocator.allocate(func, is.getInstructions(), is.getPendingLabel());
+
+      if (allocatorFlag.equals("--naive")) {
+        NaiveAllocator allocator = new NaiveAllocator(out);
+        allocator.allocate(func, is.getInstructions(), is.getPendingLabel());
+      } else if (allocatorFlag.equals("--greedy")) {
+        IntrablockAllocator allocator = new IntrablockAllocator(out);
+        allocator.allocate(func, is.getInstructions(), is.getPendingLabel());
+      } else {
+        System.err.println("run.sh has incorrect input.");
+        System.exit(1);
+      }
+      
+      
+      
+      
+
+
     }
 
     Intrinsics.emit(out);
