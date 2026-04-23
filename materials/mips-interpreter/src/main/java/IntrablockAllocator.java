@@ -99,8 +99,7 @@ public class IntrablockAllocator {
     Map<String, Integer> arrayBaseOffsets = buildArrayBaseOffsets(func, frameSize, totalArrayDataSize);
 
     // make room for virtual register spill slots and local array data
-    emit(new MIPSInstruction(MIPSOp.ADDI, null, sp, sp,
-        new Imm(String.valueOf(-(frameSize + totalArrayDataSize)), "DEC")));
+    emitAddImm(sp, sp, -(frameSize + totalArrayDataSize));
 
     // put incoming params and array base pointers into their stack slots
     loadParameters(func, vrMap, fp);
@@ -314,8 +313,7 @@ public class IntrablockAllocator {
       if (!vrMap.containsKey(varKey)) {
         continue;
       }
-      emit(new MIPSInstruction(MIPSOp.ADDI, null, t0, fp,
-          new Imm(String.valueOf(dataFpOffset), "DEC")));
+      emitAddImm(t0, fp, dataFpOffset);
       emit(new MIPSInstruction(MIPSOp.SW, null, t0,
           new Addr(new Imm(String.valueOf(vrMap.get(varKey)), "DEC"), fp)));
     }
@@ -651,6 +649,20 @@ public class IntrablockAllocator {
       Map<String, RegisterClass> vrClasses, Register fp) {
     emitWithPendingLabel(new MIPSInstruction(storeOpFor(registerClassOf(vrName, vrClasses)), null,
         phys, frameAddress(vrMap.get(vrName), fp)));
+  }
+
+  // emits dest = src + imm, using LI+ADD/SUB when imm falls outside 16-bit signed range
+  private void emitAddImm(Register dest, Register src, int imm) {
+    if (imm >= -32768 && imm <= 32767) {
+      emit(new MIPSInstruction(MIPSOp.ADDI, null, dest, src,
+          new Imm(String.valueOf(imm), "DEC")));
+    } else {
+      Register tmp = new Register("$t9", false);
+      emit(new MIPSInstruction(MIPSOp.LI, null, tmp,
+          new Imm(String.valueOf(Math.abs(imm)), "DEC")));
+      MIPSOp op = imm < 0 ? MIPSOp.SUB : MIPSOp.ADD;
+      emit(new MIPSInstruction(op, null, dest, src, tmp));
+    }
   }
 
   // helper for offset($fp)
