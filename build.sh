@@ -4,7 +4,7 @@
 # javac -d build mirrors the package hierarchy, so ir/*.java -> build/ir/, etc.
 mkdir -p build
 
-find materials/src -name "*.java" > sources.txt
+find materials/mips-interpreter/src/main/java -name "*.java" > sources.txt
 javac -d build @sources.txt
 EXIT_CODE=$?
 rm sources.txt

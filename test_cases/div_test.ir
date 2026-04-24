@@ -1,0 +1,90 @@
+#start_function
+void main:
+int-list: a, b, c, d, e, f, g, h, i, j, k
+float-list:
+print:
+    assign, a, 1
+    assign, b, 2
+    assign, c, 3    
+    assign, d, 4
+    assign, e, 5
+    assign, f, 6
+    assign, g, 7
+    assign, h, 8
+    assign, i, 9
+    assign, j, 10
+    assign, k, 11
+
+    call, puti, a
+    call, putc, 10
+
+    div, a, b, c
+    call, puti, a
+    call, putc, 10
+
+    assign, a, 1
+
+    div, a, d, a
+    call, puti, a
+    call, putc, 10
+
+    div, a, e, b
+    call, puti, a
+    call, putc, 10
+
+    div, a, f, c
+    call, puti, a
+    call, putc, 10
+    
+    div, a, g, a
+    call, puti, a
+    call, putc, 10
+
+    div, a, h, a
+    call, puti, a
+    call, putc, 10
+
+    div, a, i, d
+    call, puti, a
+    call, putc, 10
+
+    div, a, a, j
+    call, puti, a
+    call, putc, 10
+
+    div, a, a, k
+    call, puti, a
+    call, putc, 10
+
+    call, putc, 10
+
+    div, b, b, 5
+    call, puti, b
+    call, putc, 10
+
+    assign, b, 2
+
+    div, b, 5, b
+    call, puti, b
+    call, putc, 10
+
+    div, b, 5, 5
+    call, puti, b
+    call, putc, 10
+
+    call, putc, 10
+
+    div, c, b, 5
+    call, puti, c
+    call, putc, 10
+
+    assign, b, 1
+
+    div, c, 5, b
+    call, puti, c
+    call, putc, 10
+
+    div, c, -5, 5
+    call, puti, c
+    call, putc, 10
+#end_functions

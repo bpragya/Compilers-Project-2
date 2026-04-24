@@ -1,0 +1,74 @@
+#start_function
+int my_add(int a, int b):
+int-list: c
+float-list:
+    add, c, a, b
+    return, c
+#end_function
+
+#start_function
+int multiply(int a, int b):
+int-list: c
+float-list:
+    mult, c, a, b
+    return, c
+#end_function
+
+#start_function
+int absolute(int a):
+int-list: result
+float-list:
+    brgeq, pos, a, 0
+    sub, result, 0, a
+    return, result
+pos:
+    assign, result, a
+    return, result
+#end_function
+
+#start_function
+int max(int a, int b):
+int-list: result
+float-list:
+    brgeq, a_bigger, a, b
+    assign, result, b
+    return, result
+a_bigger:
+    assign, result, a
+    return, result
+#end_function
+
+#start_function
+void main():
+int-list: a, b, c
+float-list:
+    callr, c, my_add, 3, 4
+    call, puti, c
+    call, putc, 10
+    callr, c, my_add, -5, 5
+    call, puti, c
+    call, putc, 10
+    callr, c, multiply, 6, 7
+    call, puti, c
+    call, putc, 10
+    callr, c, multiply, -3, 4
+    call, puti, c
+    call, putc, 10
+    callr, c, absolute, -42
+    call, puti, c
+    call, putc, 10
+    callr, c, absolute, 42
+    call, puti, c
+    call, putc, 10
+    callr, c, max, 10, 20
+    call, puti, c
+    call, putc, 10
+    callr, c, max, 20, 10
+    call, puti, c
+    call, putc, 10
+    callr, a, my_add, 1, 2
+    callr, b, multiply, 3, 4
+    callr, c, my_add, a, b
+    call, puti, c
+    call, putc, 10
+#end_function

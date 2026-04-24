@@ -1,0 +1,18 @@
+#start_function
+void main():
+int-list: A[4], i, x
+float-list:
+    assign, i, 0
+
+    array_store, 10, A, i
+    array_store, 20, A, i
+
+    add, i, i, 1
+
+    call, puti, i
+    call, putc, 10
+
+    array_load, x, A, i
+    call, puti, x
+    call, putc, 10
+#end_function

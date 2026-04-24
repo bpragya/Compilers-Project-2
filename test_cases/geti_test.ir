@@ -1,0 +1,62 @@
+#start_function
+void main:
+int-list: a, b, c
+float-list:
+
+call, putc, 69
+call, putc, 110
+call, putc, 116
+call, putc, 101
+call, putc, 114
+
+call, putc, 32
+
+call, putc, 78
+call, putc, 117
+call, putc, 109
+call, putc, 98
+call, putc, 101
+call, putc, 114 
+call, putc, 58
+
+call, putc, 10
+
+callr, a, geti
+
+call, putc, 69
+call, putc, 110
+call, putc, 116
+call, putc, 101
+call, putc, 114
+
+call, putc, 32
+
+call, putc, 78
+call, putc, 117
+call, putc, 109
+call, putc, 98
+call, putc, 101
+call, putc, 114 
+call, putc, 58
+
+call, putc, 10
+
+callr, b, geti
+
+add, c, a, b
+
+call, puti, a
+
+call, putc, 32
+call, putc, 43
+call, putc, 32
+
+call, puti, b
+
+call, putc, 32
+call, putc, 61
+call, putc, 32
+call, puti, c
+
+call, putc, 10
+#end_function

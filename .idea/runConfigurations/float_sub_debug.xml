@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="float_sub_debug" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="Main" />
+    <option name="PROGRAM_PARAMETERS" value="materials/public_test_cases/float_sub/float_sub.ir out/float_sub.s" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <module name="Project-2-Compilers" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

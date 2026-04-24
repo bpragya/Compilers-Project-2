@@ -1,0 +1,12 @@
+#start_function
+void main:
+int-list:
+float-list:
+print:
+    call, putc, 72
+    call, putc, 101
+    call, putc, 108
+    call, putc, 108
+    call, putc, 111
+    call, putc, 10
+#end_function

@@ -1,0 +1,71 @@
+#start_function
+void main:
+int-list: a, b, c, d, e, f, g, h, i, j, k
+float-list:
+print:
+    assign, a, 1
+    assign, b, 2
+    assign, c, 3    
+    assign, d, 4
+    assign, e, 5
+    assign, f, 6
+    assign, g, 7
+    assign, h, 8
+    assign, i, 9
+    assign, j, 10
+    assign, k, 11
+
+label1:
+    call, puti, a
+    call, putc, 10
+    goto, label2
+label7:
+    call, puti, g
+    call, putc, 10
+    goto, label8
+
+label3:
+    call, puti, c
+    call, putc, 10
+    goto, label4
+
+label2:
+    call, puti, b
+    call, putc, 10
+    goto, label3
+
+label5:
+    call, puti, e
+    call, putc, 10
+    goto, label6
+
+label4:
+    call, puti, d
+    call, putc, 10
+    goto, label5
+
+label6:
+    call, puti, f
+    call, putc, 10
+    goto, label7
+
+label8:
+    call, puti, h
+    call, putc, 10
+    goto, label9
+
+label10:
+    call, puti, j
+    call, putc, 10
+    goto, label11
+
+label9:
+    call, puti, i
+    call, putc, 10
+    goto, label10
+
+label11:
+    call, puti, k
+    call, putc, 10
+
+#end_function

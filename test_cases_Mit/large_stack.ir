@@ -1,0 +1,41 @@
+#start_function
+void main():
+int-list: a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, arr[10], i, t
+float-list:
+    assign, a1, 1
+    assign, a2, 2
+    assign, a3, 3
+    assign, a4, 4
+    assign, a5, 5
+    assign, a6, 6
+    assign, a7, 7
+    assign, a8, 8
+    assign, a9, 9
+    assign, a10, 10
+    assign, a11, 11
+    assign, a12, 12
+    assign, a13, 13
+    assign, a14, 14
+    assign, a15, 15
+    assign, a16, 16
+    assign, a17, 17
+    assign, a18, 18
+    assign, a19, 19
+    assign, a20, 20
+    assign, arr, 10, 99
+    assign, i, 0
+loop:
+    brgeq, done, i, 10
+    array_load, t, arr, i
+    call, puti, t
+    call, putc, 10
+    add, i, i, 1
+    goto, loop
+done:
+    call, puti, a1
+    call, putc, 10
+    call, puti, a10
+    call, putc, 10
+    call, puti, a20
+    call, putc, 10
+#end_function

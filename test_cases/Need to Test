@@ -1,0 +1,34 @@
+Commented means test has been written
+
+Instructions
+
+// - assign
+// - add
+// - sub
+// - mult
+// - div
+// - and
+// - or
+
+// - goto
+
+// - breq
+// - brneq
+// - brlt
+// - brgt
+// - brgeq
+
+// - return
+
+// - call
+// - callr
+
+// - array_store
+// - array_load
+
+# Intrinsics
+
+// - geti
+// - getc
+// - puti
+// - putc
