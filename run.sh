@@ -15,4 +15,4 @@ bash "$SCRIPT_DIR/build.sh" || exit 1
 
 java -cp build Main "$INPUT_IR" "$OUTPUT_S" "$ALLOCATOR_FLAG" || exit 1
 
-java -cp build mips.MIPSInterpreter "$OUTPUT_S"
+spim -keepstats -exception_file "$SCRIPT_DIR/exceptions.s" -f "$OUTPUT_S"
