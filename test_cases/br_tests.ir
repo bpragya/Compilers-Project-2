@@ -1,0 +1,70 @@
+#start_function
+void main:
+int-list: a, b, c, d, e, f, g, h, i, j, k
+float-list:
+
+main:
+    assign, a, 0
+    assign, b, 10
+    
+breq_loop:
+    breq, end_breq_loop, a, b
+    add, a, a, 1
+    call, puti, a
+    call, putc, 10
+    goto, breq_loop
+end_breq_loop:
+
+call, putc, 10
+
+assign c, 0
+assign d, 0
+brneq_loop:
+    and d, c, -8
+    brneq, end_brneq_loop, d, 0
+    add c, c, 1
+    call, puti, c
+    call, putc, 10
+    goto, brneq_loop
+end_brneq_loop:
+
+call, putc, 10
+
+assign, e, 10
+assign, f, 1
+
+brlt_loop:
+    brlt, end_brlt_loop, e, f
+    call, puti, e
+    call, putc, 10
+    sub, e, e, 1
+    goto, brlt_loop
+
+end_brlt_loop:
+
+call, putc, 10
+
+
+assign, g, 0
+assign, h, 10
+brgt_loop:
+    breq, end_brgt_loop, g, h
+    add, g, g, 1
+    call, puti, g
+    call, putc, 10
+    goto, brgt_loop
+end_brgt_loop:
+
+call, putc, 10
+
+assign, i, 0
+assign, j, 10
+brgeq_loop:
+    add, i, i, 1
+    breq, end_brgeq_loop, i, j
+    call, puti, i
+    call, putc, 10
+    goto, brgeq_loop
+end_brgeq_loop:
+
+#end_function

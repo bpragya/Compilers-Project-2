@@ -1,0 +1,84 @@
+#start_function
+void main:
+int-list: a, b, c, d, e, f, g, h, i, j, k
+float-list:
+print:
+    assign, a, -1
+    assign, b, 1239912
+    assign, c, 100001
+    assign, d, 12313
+    assign, e, 5412
+    assign, f, 12301
+    assign, g, 7123
+    assign, h, 898990
+    assign, i, 261927
+    assign, j, -120301
+    assign, k, -10
+
+    call, puti, a
+    call, putc, 10
+
+    and, a, b, c
+    call, puti, a
+    call, putc, 10
+
+    and, a, k, d
+    call, puti, a
+    call, putc, 10
+
+    and, a, k, e
+    call, puti, a
+    call, putc, 10
+
+    and, a, k, f
+    call, puti, a
+    call, putc, 10
+    
+    and, a, a, g
+    call, puti, a
+    call, putc, 10
+
+    and, a, b, h
+    call, puti, a
+    call, putc, 10
+
+    and, a, a, i
+    call, puti, a
+    call, putc, 10
+
+    and, a, a, j
+    call, puti, a
+    call, putc, 10
+
+    and, a, d, k
+    call, puti, a
+    call, putc, 10
+
+    call, putc, 10
+
+    and, b, b, 5
+    call, puti, b
+    call, putc, 10
+
+    and, b, 5, b
+    call, puti, b
+    call, putc, 10
+
+    and, b, 5, 5
+    call, puti, b
+    call, putc, 10
+
+    call, putc, 10
+
+    and, c, b, 5
+    call, puti, c
+    call, putc, 10
+
+    and, c, 5, b
+    call, puti, c
+    call, putc, 10
+
+    and, c, -5, 5
+    call, puti, c
+    call, putc, 10
+#end_function

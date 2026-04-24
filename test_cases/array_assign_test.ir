@@ -1,0 +1,25 @@
+#start_function
+void main:
+int-list: i, t, text[10]
+float-list:
+
+array_store, 10, text, 9
+array_store, 9, text, 8
+array_store, 6, text, 4
+
+assign, text, 10, 104
+assign, text, 5, 97
+
+
+assign, i, 0
+loop:
+    brgeq, end, i, 10
+    array_load, t, text, i
+    call, putc, t
+    add, i, i, 1
+    goto, loop
+end:
+
+call, putc, 10
+
+#end_function

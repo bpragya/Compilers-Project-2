@@ -18,6 +18,7 @@ public class Intrinsics {
     emitFunction(out, "getf", null, 6);
     emitFunction(out, "putf", "l.s $f12, 8($fp)", 2);
     emitFunction(out, "geti", null, 5);
+    emitFunction(out, "getc", null, 12);
     emitFunction(out, "puti", "lw $a0, 8($fp)", 1);
     emitFunction(out, "putc", "lw $a0, 8($fp)", 11);
   }

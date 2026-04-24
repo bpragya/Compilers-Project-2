@@ -25,6 +25,7 @@ public class MIPSInterpreter {
     private static final int SBRK = 9;
     private static final int EXIT = 10;
     private static final int PRINT_CHAR = 11;
+    private static final int READ_CHAR = 12;
 
     private static final int WORD_SIZE = 4;
     private static final int BYTE = 1;
@@ -473,6 +474,9 @@ public class MIPSInterpreter {
                             System.out.println();
                         }
                         break;
+                    case READ_CHAR:
+                        writeRegister("$v0", readChar());
+                        break;
                 }
 
                 pc += 4;
@@ -712,6 +716,21 @@ public class MIPSInterpreter {
             default:
                 pc += 4;
         }
+    }
+
+    private int readChar() {
+        if (inputReader != null) {
+            try {
+                int ch = inputReader.read();
+                if (ch == -1) throw new IllegalReadException("end of input");
+                return ch;
+            } catch (IOException e) {
+                throw new IllegalReadException("something wrong with input file");
+            }
+        }
+        String s = input.findWithinHorizon("(?s).", 0);
+        if (s == null) throw new IllegalReadException("end of input");
+        return s.charAt(0);
     }
 
     private int readInt() {

@@ -1,0 +1,41 @@
+#start_function
+void main:
+int-list: h, e, l, o, i, t, text[13]
+float-list:
+
+assign, h, 72
+assign, e, 101
+assign, l, 108
+assign, o, 111
+
+array_store, h, text, 0
+array_store, e, text, 1
+array_store, l, text, 2
+array_store, l, text, 3
+array_store, o, text, 4
+
+array_store, 32, text, 5
+
+array_store, 87, text, 6
+array_store, 111, text, 7
+array_store, 114, text, 8
+array_store, l, text, 9
+array_store, 100, text, 10
+
+array_store, 33, text, 11
+array_store, 10, text, 12
+
+
+assign, i, 0
+loop:
+    brgeq, end, i, 12
+    array_load, t, text, i
+    call, putc, t
+    add, i, i, 1
+    goto, loop
+end:
+
+array_load, t, text, 12
+call, putc, t
+
+#end_function

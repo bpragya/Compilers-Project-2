@@ -1,0 +1,14 @@
+#start_function
+void main:
+int-list: a
+float-list:
+
+loop:
+    callr, a, getc
+    breq, end, a, 10
+    call, putc, 32
+    call, putc, a
+    goto, loop
+end:
+call, putc, 10
+#end_function
