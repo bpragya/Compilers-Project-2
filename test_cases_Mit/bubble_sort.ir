@@ -1,0 +1,46 @@
+#start_function
+void main():
+int-list: arr[100], i, j, ti, tj, n, jj
+float-list:
+    assign, n, 8
+    array_store, 64, arr, 0
+    array_store, 34, arr, 1
+    array_store, 25, arr, 2
+    array_store, 12, arr, 3
+    array_store, 22, arr, 4
+    array_store, 11, arr, 5
+    array_store, 90, arr, 6
+    array_store, 1, arr, 7
+    assign, i, 0
+outer:
+    brgeq, print, i, n
+    assign, j, 0
+inner:
+    add, jj, j, 1
+    brgeq, outer_inc, jj, n
+    array_load, ti, arr, j
+    array_load, tj, arr, jj
+    brgeq, no_swap, ti, tj
+    goto, do_swap
+no_swap:
+    add, j, j, 1
+    goto, inner
+do_swap:
+    array_store, tj, arr, j
+    array_store, ti, arr, jj
+    add, j, j, 1
+    goto, inner
+outer_inc:
+    add, i, i, 1
+    goto, outer
+print:
+    assign, i, 0
+print_loop:
+    brgeq, done, i, n
+    array_load, ti, arr, i
+    call, puti, ti
+    call, putc, 10
+    add, i, i, 1
+    goto, print_loop
+done:
+#end_function

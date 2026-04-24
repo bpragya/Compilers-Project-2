@@ -1,0 +1,28 @@
+#start_function
+void main():
+int-list: arr1[3], arr2[3], i, val
+float-list:
+    assign, arr1, 3, 1
+    
+    assign, arr2, 3, 2
+    
+    assign, i, 0
+loop1:
+    brgeq, done1, i, 3
+    array_load, val, arr1, i
+    call, puti, val
+    call, putc, 10
+    add, i, i, 1
+    goto, loop1
+done1:
+
+    assign, i, 0
+loop2:
+    brgeq, done2, i, 3
+    array_load, val, arr2, i
+    call, puti, val
+    call, putc, 10
+    add, i, i, 1
+    goto, loop2
+done2:
+#end_function

@@ -1,0 +1,27 @@
+#start_function
+void init_and_print(int[100] arr, int size, int initval):
+int-list: i, val
+float-list:
+    assign, arr, size, initval
+    
+    assign, i, 0
+loop:
+    brgeq, done, i, size
+    array_load, val, arr, i
+    call, puti, val
+    call, putc, 10
+    add, i, i, 1
+    goto, loop
+done:
+#end_function
+
+#start_function
+void main():
+int-list: arr1[100], arr2[100]
+float-list:
+    call, init_and_print, arr1, 3, 1
+    
+    call, init_and_print, arr2, 4, 2
+    
+    call, init_and_print, arr1, 3, 1
+#end_function

@@ -1,0 +1,73 @@
+#start_function
+void main():
+int-list: a, b, c
+float-list:
+    assign, a, 5
+    assign, b, 5
+    breq, eq_true, a, b
+    call, putc, 70
+    call, putc, 10
+    goto, after_eq
+eq_true:
+    call, putc, 84
+    call, putc, 10
+after_eq:
+    assign, a, 3
+    assign, b, 5
+    brneq, neq_true, a, b
+    call, putc, 70
+    call, putc, 10
+    goto, after_neq
+neq_true:
+    call, putc, 84
+    call, putc, 10
+after_neq:
+    brlt, lt_true, a, b
+    call, putc, 70
+    call, putc, 10
+    goto, after_lt
+lt_true:
+    call, putc, 84
+    call, putc, 10
+after_lt:
+    assign, a, 5
+    assign, b, 3
+    brgt, gt_true, a, b
+    call, putc, 70
+    call, putc, 10
+    goto, after_gt
+gt_true:
+    call, putc, 84
+    call, putc, 10
+after_gt:
+    assign, a, 5
+    assign, b, 5
+    brgeq, geq_true, a, b
+    call, putc, 70
+    call, putc, 10
+    goto, after_geq
+geq_true:
+    call, putc, 84
+    call, putc, 10
+after_geq:
+    assign, a, 0
+    assign, b, 0
+    breq, zero_eq, a, b
+    call, putc, 70
+    call, putc, 10
+    goto, after_zero
+zero_eq:
+    call, putc, 84
+    call, putc, 10
+after_zero:
+    assign, a, -5
+    assign, b, -3
+    brlt, neg_lt, a, b
+    call, putc, 70
+    call, putc, 10
+    goto, after_neg
+neg_lt:
+    call, putc, 84
+    call, putc, 10
+after_neg:
+#end_function

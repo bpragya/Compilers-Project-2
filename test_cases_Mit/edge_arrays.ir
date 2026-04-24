@@ -1,0 +1,44 @@
+#start_function
+void main():
+int-list: arr[5], i, t, s
+float-list:
+    assign, i, 0
+fill_loop:
+    brgeq, fill_done, i, 5
+    array_store, i, arr, i
+    add, i, i, 1
+    goto, fill_loop
+fill_done:
+    assign, i, 0
+    assign, s, 0
+sum_loop:
+    brgeq, sum_done, i, 5
+    array_load, t, arr, i
+    add, s, s, t
+    add, i, i, 1
+    goto, sum_loop
+sum_done:
+    call, puti, s
+    call, putc, 10
+    array_store, 99, arr, 0
+    array_store, 99, arr, 4
+    array_load, t, arr, 0
+    call, puti, t
+    call, putc, 10
+    array_load, t, arr, 4
+    call, puti, t
+    call, putc, 10
+    array_load, t, arr, 2
+    call, puti, t
+    call, putc, 10
+    assign, arr, 5, 42
+    assign, i, 0
+check_loop:
+    brgeq, check_done, i, 5
+    array_load, t, arr, i
+    call, puti, t
+    call, putc, 10
+    add, i, i, 1
+    goto, check_loop
+check_done:
+#end_function

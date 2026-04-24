@@ -1,0 +1,30 @@
+#start_function
+int fib(int n):
+int-list: result, n1, n2, r1, r2
+float-list:
+    brgt, recurse, n, 1
+    assign, result, n
+    return, result
+recurse:
+    sub, n1, n, 1
+    sub, n2, n, 2
+    callr, r1, fib, n1
+    callr, r2, fib, n2
+    add, result, r1, r2
+    return, result
+#end_function
+
+#start_function
+void main():
+int-list: i, result
+float-list:
+    assign, i, 0
+loop:
+    brgeq, done, i, 10
+    callr, result, fib, i
+    call, puti, result
+    call, putc, 10
+    add, i, i, 1
+    goto, loop
+done:
+#end_function

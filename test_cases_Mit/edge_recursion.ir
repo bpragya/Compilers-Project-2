@@ -1,0 +1,54 @@
+#start_function
+int factorial(int n):
+int-list: result, nm1, sub_result
+float-list:
+    brgt, recurse, n, 1
+    assign, result, 1
+    return, result
+recurse:
+    sub, nm1, n, 1
+    callr, sub_result, factorial, nm1
+    mult, result, n, sub_result
+    return, result
+#end_function
+
+#start_function
+int power(int base, int exp):
+int-list: result, exp1, sub_result
+float-list:
+    breq, base_case, exp, 0
+    sub, exp1, exp, 1
+    callr, sub_result, power, base, exp1
+    mult, result, base, sub_result
+    return, result
+base_case:
+    assign, result, 1
+    return, result
+#end_function
+
+#start_function
+void main():
+int-list: result
+float-list:
+    callr, result, factorial, 1
+    call, puti, result
+    call, putc, 10
+    callr, result, factorial, 5
+    call, puti, result
+    call, putc, 10
+    callr, result, factorial, 10
+    call, puti, result
+    call, putc, 10
+    callr, result, power, 2, 0
+    call, puti, result
+    call, putc, 10
+    callr, result, power, 2, 8
+    call, puti, result
+    call, putc, 10
+    callr, result, power, 3, 4
+    call, puti, result
+    call, putc, 10
+    callr, result, power, -2, 3
+    call, puti, result
+    call, putc, 10
+#end_function

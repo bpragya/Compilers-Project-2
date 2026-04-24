@@ -1,0 +1,38 @@
+#start_function
+void print_array(int[100] arr, int size):
+int-list: i, val
+float-list:
+    assign, i, 0
+loop:
+    brgeq, done, i, size
+    array_load, val, arr, i
+    call, puti, val
+    call, putc, 10
+    add, i, i, 1
+    goto, loop
+done:
+#end_function
+
+#start_function
+void modify_array(int[100] arr, int size, int newval):
+int-list: i
+float-list:
+    assign, i, 0
+loop:
+    brgeq, done, i, size
+    array_store, newval, arr, i
+    add, i, i, 1
+    goto, loop
+done:
+#end_function
+
+#start_function
+void main():
+int-list: myarr[100], i, temp
+float-list:
+    assign, myarr, 5, 0
+    call, print_array, myarr, 5
+    call, modify_array, myarr, 5, 99
+    assign, myarr, 5, 42
+    call, print_array, myarr, 5
+#end_function

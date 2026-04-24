@@ -128,12 +128,49 @@ public class InstructionSelection {
   private void emitAssign(IRInstruction instr) {
     IROperand dest = instr.operands[0];
     IROperand src = instr.operands[1];
+    if (instr.operands.length > 2) {
+      emitBulkArrayInit(dest, src, instr.operands[2]);
+      return;
+    }
     if (src instanceof IRVariableOperand) {
       emit(new MIPSInstruction(MIPSOp.MOVE, null, vr(dest), vr(src)));
     } else {
       emit(new MIPSInstruction(MIPSOp.LI, null, vr(dest),
           new Imm(src.toString(), "DEC")));
     }
+  }
+
+  // assign, arr, N, val — fill the first N elements of arr with val
+  private void emitBulkArrayInit(IROperand arr, IROperand count, IROperand val) {
+    int id = tmpCounter++;
+    String loopLabel = "__init_loop_" + id;
+    String doneLabel = "__init_done_" + id;
+
+    Register valReg   = resolveToRegister(val);
+    Register countReg = resolveToRegister(count);
+
+    String iTmp = "$__i_" + id;
+    emit(new MIPSInstruction(MIPSOp.LI, null, new Register(iTmp, true), new Imm("0", "DEC")));
+
+    labels.put(loopLabel, mipsIdx);
+    pendingLabel = loopLabel;
+    emit(new MIPSInstruction(MIPSOp.BGE, null,
+        new Register(iTmp, true), countReg, new Addr(doneLabel)));
+
+    String addrTmp = "$__addr" + addrTmpCounter++;
+    emit(new MIPSInstruction(MIPSOp.SLL, null,
+        new Register(addrTmp, true), new Register(iTmp, true), new Imm("2", "DEC")));
+    emit(new MIPSInstruction(MIPSOp.ADD, null,
+        new Register(addrTmp, true), vr(arr), new Register(addrTmp, true)));
+    emit(new MIPSInstruction(MIPSOp.SW, null,
+        valReg, new Addr(new Imm("0", "DEC"), new Register(addrTmp, true))));
+
+    emit(new MIPSInstruction(MIPSOp.ADDI, null,
+        new Register(iTmp, true), new Register(iTmp, true), new Imm("1", "DEC")));
+    emit(new MIPSInstruction(MIPSOp.J, null, new Addr(loopLabel)));
+
+    labels.put(doneLabel, mipsIdx);
+    pendingLabel = doneLabel;
   }
 
   private void emitAdd(IRInstruction instr) {
