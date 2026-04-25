@@ -10,7 +10,6 @@ import mips.operand.Register;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -26,18 +25,21 @@ public class IntrablockAllocator {
     FLOAT
   }
 
-  // pool of integer regs
+  // these are the integer regs we keep assigned for a whole block
   private static final List<Register> INT_REGS = Arrays.asList(
       new Register("$t0", false),
       new Register("$t1", false),
       new Register("$t2", false),
       new Register("$t3", false),
-      new Register("$t4", false),
+      new Register("$t4", false));
+  
+  // keep a few integer temps around for spilled values inside one instruction
+  private static final List<Register> INT_SPILL_REGS = Arrays.asList(
       new Register("$t5", false),
       new Register("$t6", false),
       new Register("$t7", false));
-  
-  // pool of float regs
+
+  // same idea for float values
   private static final List<Register> FLOAT_REGS = Arrays.asList(
       // return uses $f0, count from f2 inclusive
       new Register("$f2", false),
@@ -50,7 +52,10 @@ public class IntrablockAllocator {
       new Register("$f18", false),
       new Register("$f20", false),
       new Register("$f22", false),
-      new Register("$f24", false),
+      new Register("$f24", false));
+
+  // float scratch regs for spilled reads/writes
+  private static final List<Register> FLOAT_SPILL_REGS = Arrays.asList(
       new Register("$f26", false),
       new Register("$f28", false),
       new Register("$f30", false));
@@ -62,6 +67,24 @@ public class IntrablockAllocator {
   private final Map<String, Integer> labels;
   private int mipsIdx = 0;
   private String pendingLabel = null;
+
+  // for one block: who stays in a real reg, and who needs a load at block entry
+  private static final class BlockPlan {
+    private final Map<String, Register> assignedRegs;
+    private final Set<String> entryLoads;
+
+    private BlockPlan(Map<String, Register> assignedRegs, Set<String> entryLoads) {
+      this.assignedRegs = assignedRegs;
+      this.entryLoads = entryLoads;
+    }
+  }
+
+  // scratch regs only live for one instruction while we deal with spills
+  private static final class ScratchPool {
+    private final Map<String, Register> regs = new HashMap<>();
+    private int nextInt = 0;
+    private int nextFloat = 0;
+  }
 
   public IntrablockAllocator(PrintStream out) {
     this.out = out;
@@ -333,8 +356,8 @@ public class IntrablockAllocator {
 
       current.add(inst);
 
-      // branches/jumps end the current block
-      if (isBlockTerminator(inst)) {
+      // branches/jumps end the current block, and calls do too since $t regs are caller-saved
+      if (endsAllocationBlock(inst)) {
         blocks.add(current);
         current = new ArrayList<>();
       }
@@ -347,11 +370,12 @@ public class IntrablockAllocator {
     return blocks;
   }
 
-  // instructions where control flow leaves the current straight-line block
-  private boolean isBlockTerminator(MIPSInstruction inst) {
+  // things that end the current allocation block
+  private boolean endsAllocationBlock(MIPSInstruction inst) {
     return inst.isBranch()
         || inst.op == MIPSOp.J
         || inst.op == MIPSOp.JR
+        || inst.op == MIPSOp.JAL
         || inst.op == MIPSOp.BC1T
         || inst.op == MIPSOp.BC1F;
   }
@@ -370,101 +394,171 @@ public class IntrablockAllocator {
     }
   }
 
-  // main register allocation loop for one basic block
+  // main block allocator
   private void emitBlock(List<MIPSInstruction> block, Map<String, Integer> vrMap,
       Map<String, RegisterClass> vrClasses, Register fp, String epilogueLabel) {
-    // virtual register name -> physical register currently holding it
-    Map<String, Register> vrToPr = new HashMap<>();
+    BlockPlan plan = planBlock(block, vrClasses);
+    Set<String> activeAssigned = new HashSet<>();
+    boolean storedAtExit = false;
 
-    // physical register name -> virtual register currently inside it
-    Map<String, String> prToVr = new HashMap<>();
-
-    // values that changed in a physical reg but are not saved to memory yet
-    Set<String> dirty = new HashSet<>();
-
-    // for each instruction, what virtual regs get used later in this block
-    List<Map<String, Integer>> nextUseAfter = computeNextUseAfter(block);
+    // if the block starts with a label, any preload has to inherit it
+    pendingLabel = block.get(0).label;
+    preloadAssignedRegisters(plan, activeAssigned, vrMap, vrClasses, fp);
 
     for (int i = 0; i < block.size(); i++) {
       MIPSInstruction inst = block.get(i);
-      Map<String, Integer> futureUses = nextUseAfter.get(i);
-      pendingLabel = inst.label;
+      if (i > 0) {
+        pendingLabel = inst.label;
+      }
 
-      // all returns go through one shared epilogue
+      // all returns still go through one shared epilogue
       if (inst.op == MIPSOp.JR) {
-        flushDirty(vrToPr, dirty, vrMap, vrClasses, fp);
+        storeAssignedRegisters(plan, activeAssigned, vrMap, vrClasses, fp);
         emitWithPendingLabel(new MIPSInstruction(MIPSOp.J, null, new Addr(epilogueLabel)));
-        clearState(vrToPr, prToVr, dirty);
-        continue;
+        storedAtExit = true;
+        break;
       }
 
-      // calls and control-flow exits cannot trust caller-saved temps afterward
-      boolean barrier = inst.op == MIPSOp.JAL || isBlockTerminator(inst);
-      if (barrier) {
-        flushDirty(vrToPr, dirty, vrMap, vrClasses, fp);
+      // if control leaves here, memory needs to be up to date before the jump/call happens
+      if (endsAllocationBlock(inst)) {
+        storeAssignedRegisters(plan, activeAssigned, vrMap, vrClasses, fp);
+        emitAllocatedInstruction(inst, plan, activeAssigned, vrMap, vrClasses, fp);
+        storedAtExit = true;
+        break;
       }
 
-      emitAllocatedInstruction(inst, futureUses, vrMap, vrClasses, fp, vrToPr, prToVr,
-          dirty);
-
-      if (barrier) {
-        // after a barrier, memory is the source of truth again
-        clearState(vrToPr, prToVr, dirty);
-      } else {
-        // free regs whose values are not needed later in this block
-        freeDeadMappings(futureUses, vrMap, vrClasses, fp, vrToPr, prToVr, dirty);
-      }
+      emitAllocatedInstruction(inst, plan, activeAssigned, vrMap, vrClasses, fp);
     }
 
-    // clean up any values still live at the end of the block
+    // fallthrough blocks still need to spill their assigned regs at the end
     pendingLabel = null;
-    flushDirty(vrToPr, dirty, vrMap, vrClasses, fp);
-    clearState(vrToPr, prToVr, dirty);
+    if (!storedAtExit) {
+      storeAssignedRegisters(plan, activeAssigned, vrMap, vrClasses, fp);
+    }
   }
 
-  // scan backward so we can tell when each virtual register is next used
-  private List<Map<String, Integer>> computeNextUseAfter(List<MIPSInstruction> block) {
-    List<Map<String, Integer>> nextUseAfter = new ArrayList<>(
-        Collections.nCopies(block.size(), null));
-    Map<String, Integer> nextUse = new HashMap<>();
+  // choose which virtual regs win real regs for this block
+  private BlockPlan planBlock(List<MIPSInstruction> block, Map<String, RegisterClass> vrClasses) {
+    Map<String, Register> assignedRegs = new LinkedHashMap<>();
+    assignBlockRegisters(block, vrClasses, RegisterClass.INT, INT_REGS, assignedRegs);
+    assignBlockRegisters(block, vrClasses, RegisterClass.FLOAT, FLOAT_REGS, assignedRegs);
+    return new BlockPlan(assignedRegs, findEntryLoads(block, assignedRegs));
+  }
 
-    for (int i = block.size() - 1; i >= 0; i--) {
-      MIPSInstruction inst = block.get(i);
-      nextUseAfter.set(i, new HashMap<>(nextUse));
+  // greedy part from the pdf: most-used live ranges get the fixed regs first
+  private void assignBlockRegisters(List<MIPSInstruction> block,
+      Map<String, RegisterClass> vrClasses, RegisterClass registerClass,
+      List<Register> pool, Map<String, Register> assignedRegs) {
+    List<String> ranked = rankBlockVirtuals(block, vrClasses, registerClass);
+    int limit = Math.min(ranked.size(), pool.size());
+    for (int i = 0; i < limit; i++) {
+      assignedRegs.put(ranked.get(i), pool.get(i));
+    }
+  }
 
-      // a write kills the old value
-      Register write = inst.getWrite();
-      if (write != null && write.isVirtual) {
-        nextUse.remove(write.name);
-      }
+  // count each virtual register access in the block, then sort by most uses first
+  private List<String> rankBlockVirtuals(List<MIPSInstruction> block,
+      Map<String, RegisterClass> vrClasses, RegisterClass registerClass) {
+    Map<String, Integer> useCounts = new HashMap<>();
+    Map<String, Integer> firstSeen = new HashMap<>();
+    int seenIndex = 0;
 
-      // reads make this virtual live at this instruction
+    for (MIPSInstruction inst : block) {
       for (Register read : inst.getReads()) {
-        if (read != null && read.isVirtual) {
-          nextUse.put(read.name, i);
+        if (read != null && read.isVirtual
+            && registerClassOf(read.name, vrClasses) == registerClass) {
+          useCounts.put(read.name, useCounts.getOrDefault(read.name, 0) + 1);
+          firstSeen.putIfAbsent(read.name, seenIndex++);
         }
       }
+
+      Register write = inst.getWrite();
+      if (write != null && write.isVirtual
+          && registerClassOf(write.name, vrClasses) == registerClass) {
+        useCounts.put(write.name, useCounts.getOrDefault(write.name, 0) + 1);
+        firstSeen.putIfAbsent(write.name, seenIndex++);
+      }
     }
 
-    return nextUseAfter;
+    List<String> ranked = new ArrayList<>(useCounts.keySet());
+    ranked.sort((left, right) -> {
+      int countCmp = Integer.compare(useCounts.get(right), useCounts.get(left));
+      if (countCmp != 0) {
+        return countCmp;
+      }
+
+      int seenCmp = Integer.compare(firstSeen.get(left), firstSeen.get(right));
+      if (seenCmp != 0) {
+        return seenCmp;
+      }
+
+      return left.compareTo(right);
+    });
+    return ranked;
   }
 
-  // load/read regs, pick a write reg, then emit the rewritten instruction
-  private void emitAllocatedInstruction(MIPSInstruction inst, Map<String, Integer> futureUses,
-      Map<String, Integer> vrMap, Map<String, RegisterClass> vrClasses, Register fp,
-      Map<String, Register> vrToPr, Map<String, String> prToVr, Set<String> dirty) {
+  // only load the assigned regs whose first block access is a read
+  private Set<String> findEntryLoads(List<MIPSInstruction> block, Map<String, Register> assignedRegs) {
+    Set<String> entryLoads = new HashSet<>();
+    Set<String> seen = new HashSet<>();
+
+    for (MIPSInstruction inst : block) {
+      for (Register read : inst.getReads()) {
+        if (read != null && read.isVirtual && assignedRegs.containsKey(read.name)
+            && !seen.contains(read.name)) {
+          entryLoads.add(read.name);
+          seen.add(read.name);
+        }
+      }
+
+      Register write = inst.getWrite();
+      if (write != null && write.isVirtual && assignedRegs.containsKey(write.name)) {
+        seen.add(write.name);
+      }
+    }
+
+    return entryLoads;
+  }
+
+  // load the fixed block regs we know are live on entry
+  private void preloadAssignedRegisters(BlockPlan plan, Set<String> activeAssigned,
+      Map<String, Integer> vrMap, Map<String, RegisterClass> vrClasses, Register fp) {
+    List<String> entryLoads = new ArrayList<>(plan.entryLoads);
+    entryLoads.sort(Comparator.comparingInt(vrMap::get));
+
+    for (String vrName : entryLoads) {
+      Register phys = plan.assignedRegs.get(vrName);
+      emitWithPendingLabel(new MIPSInstruction(loadOpFor(registerClassOf(vrName, vrClasses)), null,
+          phys, frameAddress(vrMap.get(vrName), fp)));
+      activeAssigned.add(vrName);
+    }
+  }
+
+  // at block boundaries we make memory the source of truth again
+  private void storeAssignedRegisters(BlockPlan plan, Set<String> activeAssigned,
+      Map<String, Integer> vrMap, Map<String, RegisterClass> vrClasses, Register fp) {
+    List<String> vrNames = new ArrayList<>(activeAssigned);
+    vrNames.sort(Comparator.comparingInt(vrMap::get));
+
+    for (String vrName : vrNames) {
+      spillVirtual(vrName, plan.assignedRegs.get(vrName), vrMap, vrClasses, fp);
+    }
+  }
+
+  // rewrite one instruction using the block assignments plus scratch regs for spills
+  private void emitAllocatedInstruction(MIPSInstruction inst, BlockPlan plan,
+      Set<String> activeAssigned, Map<String, Integer> vrMap,
+      Map<String, RegisterClass> vrClasses, Register fp) {
     Register[] reads = inst.getReads();
     Register[] physReads = new Register[reads.length];
-    Set<String> lockedRegs = lockedReadRegisters(reads, vrToPr);
+    ScratchPool scratch = new ScratchPool();
+    Set<String> spilledWrites = new HashSet<>();
 
     for (int i = 0; i < reads.length; i++) {
       Register read = reads[i];
       if (read != null && read.isVirtual) {
-        // read operands must already be in real registers
-        RegisterClass registerClass = registerClassOf(read.name, vrClasses);
-        physReads[i] = ensureLoaded(read.name, registerClass, futureUses, lockedRegs,
-            vrMap, vrClasses, fp, vrToPr, prToVr, dirty);
-        lockedRegs.add(physReads[i].name);
+        physReads[i] = registerForRead(read.name, plan, activeAssigned, scratch,
+            vrMap, vrClasses, fp);
       } else {
         physReads[i] = read;
       }
@@ -473,175 +567,82 @@ public class IntrablockAllocator {
     Register write = inst.getWrite();
     Register physWrite = write;
     if (write != null && write.isVirtual) {
-      if (vrToPr.containsKey(write.name)) {
-        // if the destination is already loaded, just overwrite that reg
-        physWrite = vrToPr.get(write.name);
+      if (plan.assignedRegs.containsKey(write.name)) {
+        physWrite = plan.assignedRegs.get(write.name);
+        activeAssigned.add(write.name);
       } else {
-        // otherwise get a free register or evict something
-        RegisterClass registerClass = registerClassOf(write.name, vrClasses);
-        physWrite = acquireRegister(registerClass, futureUses, lockedRegs, vrMap,
-            vrClasses, fp, vrToPr, prToVr, dirty);
-        bind(write.name, physWrite, vrToPr, prToVr);
+        physWrite = registerForWrite(write.name, scratch, vrClasses);
+        spilledWrites.add(write.name);
       }
     }
 
     emitWithPendingLabel(substituteRegisters(inst, physReads, physWrite));
 
-    if (write != null && write.isVirtual) {
-      // memory is stale now until this gets spilled
-      dirty.add(write.name);
+    List<String> writesToStore = new ArrayList<>(spilledWrites);
+    writesToStore.sort(Comparator.comparingInt(vrMap::get));
+    for (String vrName : writesToStore) {
+      spillVirtual(vrName, scratch.regs.get(vrName), vrMap, vrClasses, fp);
     }
   }
 
-  private Set<String> lockedReadRegisters(Register[] reads, Map<String, Register> vrToPr) {
-    Set<String> lockedRegs = new HashSet<>();
-    for (Register read : reads) {
-      if (read != null && read.isVirtual && vrToPr.containsKey(read.name)) {
-        // don't evict a register we still need for this instruction
-        lockedRegs.add(vrToPr.get(read.name).name);
+  // fixed block reg if it has one, otherwise scratch reg plus a load
+  private Register registerForRead(String vrName, BlockPlan plan, Set<String> activeAssigned,
+      ScratchPool scratch, Map<String, Integer> vrMap,
+      Map<String, RegisterClass> vrClasses, Register fp) {
+    if (plan.assignedRegs.containsKey(vrName)) {
+      Register phys = plan.assignedRegs.get(vrName);
+
+      // block entry loading should usually cover this, but this keeps reads safe
+      if (!activeAssigned.contains(vrName)) {
+        emitWithPendingLabel(new MIPSInstruction(loadOpFor(registerClassOf(vrName, vrClasses)), null,
+            phys, frameAddress(vrMap.get(vrName), fp)));
+        activeAssigned.add(vrName);
       }
-    }
-    return lockedRegs;
-  }
-
-  // make sure a virtual register has a physical register holding its value
-  private Register ensureLoaded(String vrName, RegisterClass registerClass,
-      Map<String, Integer> futureUses, Set<String> lockedRegs, Map<String, Integer> vrMap,
-      Map<String, RegisterClass> vrClasses, Register fp, Map<String, Register> vrToPr,
-      Map<String, String> prToVr, Set<String> dirty) {
-    if (vrToPr.containsKey(vrName)) {
-      return vrToPr.get(vrName);
+      return phys;
     }
 
-    // not loaded yet, so grab a register and load from its spill slot
-    Register phys = acquireRegister(registerClass, futureUses, lockedRegs, vrMap,
-        vrClasses, fp, vrToPr, prToVr, dirty);
-    bind(vrName, phys, vrToPr, prToVr);
+    if (scratch.regs.containsKey(vrName)) {
+      return scratch.regs.get(vrName);
+    }
+
+    RegisterClass registerClass = registerClassOf(vrName, vrClasses);
+    Register phys = nextScratchRegister(vrName, registerClass, scratch);
     emitWithPendingLabel(new MIPSInstruction(loadOpFor(registerClass), null,
         phys, frameAddress(vrMap.get(vrName), fp)));
     return phys;
   }
 
-  // get a physical register, spilling another value if needed
-  private Register acquireRegister(RegisterClass registerClass, Map<String, Integer> futureUses,
-      Set<String> lockedRegs, Map<String, Integer> vrMap, Map<String, RegisterClass> vrClasses,
-      Register fp, Map<String, Register> vrToPr, Map<String, String> prToVr, Set<String> dirty) {
-    List<Register> pool = poolFor(registerClass);
-    for (Register candidate : pool) {
-      // easiest case: unused physical register
-      if (!prToVr.containsKey(candidate.name)) {
-        return candidate;
-      }
+  // writes to spilled virtuals just use one of the reserved scratch regs
+  private Register registerForWrite(String vrName, ScratchPool scratch,
+      Map<String, RegisterClass> vrClasses) {
+    if (scratch.regs.containsKey(vrName)) {
+      return scratch.regs.get(vrName);
     }
-
-    // otherwise choose one to spill
-    Register victim = selectVictim(pool, futureUses, lockedRegs, prToVr);
-    spillAndUnbind(victim.name, vrMap, vrClasses, fp, vrToPr, prToVr, dirty);
-    return victim;
+    return nextScratchRegister(vrName, registerClassOf(vrName, vrClasses), scratch);
   }
 
-  // pick the register whose value is needed farthest in the future
-  private Register selectVictim(List<Register> pool, Map<String, Integer> futureUses,
-      Set<String> lockedRegs, Map<String, String> prToVr) {
-    Register fallback = null;
-    Register best = null;
-    int farthestUse = Integer.MIN_VALUE;
-
-    for (Register candidate : pool) {
-      if (fallback == null) {
-        fallback = candidate;
-      }
-      if (lockedRegs.contains(candidate.name)) {
-        continue;
-      }
-
-      String vrName = prToVr.get(candidate.name);
-      Integer nextUse = futureUses.get(vrName);
-      // if it is never used again in this block, it is the best victim
-      if (nextUse == null) {
-        return candidate;
-      }
-      if (best == null || nextUse > farthestUse) {
-        best = candidate;
-        farthestUse = nextUse;
-      }
+  // grab the next scratch reg for this one instruction
+  private Register nextScratchRegister(String vrName, RegisterClass registerClass,
+      ScratchPool scratch) {
+    if (scratch.regs.containsKey(vrName)) {
+      return scratch.regs.get(vrName);
     }
 
-    return best != null ? best : fallback;
-  }
-
-  // keep both direction maps in sync
-  private void bind(String vrName, Register phys, Map<String, Register> vrToPr,
-      Map<String, String> prToVr) {
-    Register oldPhys = vrToPr.put(vrName, phys);
-    if (oldPhys != null && !oldPhys.name.equals(phys.name)) {
-      prToVr.remove(oldPhys.name);
+    List<Register> pool = scratchPoolFor(registerClass);
+    int nextIdx;
+    if (registerClass == RegisterClass.FLOAT) {
+      nextIdx = scratch.nextFloat++;
+    } else {
+      nextIdx = scratch.nextInt++;
     }
 
-    String oldVr = prToVr.put(phys.name, vrName);
-    if (oldVr != null && !oldVr.equals(vrName)) {
-      vrToPr.remove(oldVr);
-    }
-  }
-
-  // write all dirty values back to their stack slots
-  private void flushDirty(Map<String, Register> vrToPr, Set<String> dirty,
-      Map<String, Integer> vrMap, Map<String, RegisterClass> vrClasses,
-      Register fp) {
-    List<String> dirtyVrs = new ArrayList<>(dirty);
-    dirtyVrs.sort(Comparator.comparingInt(vrMap::get));
-
-    for (String vrName : dirtyVrs) {
-      Register phys = vrToPr.get(vrName);
-      if (phys != null) {
-        spillVirtual(vrName, phys, vrMap, vrClasses, fp);
-      }
-      dirty.remove(vrName);
-    }
-  }
-
-  // after each instruction, drop values with no more uses in this block
-  private void freeDeadMappings(Map<String, Integer> futureUses, Map<String, Integer> vrMap,
-      Map<String, RegisterClass> vrClasses, Register fp, Map<String, Register> vrToPr,
-      Map<String, String> prToVr, Set<String> dirty) {
-    List<String> vrNames = new ArrayList<>(vrToPr.keySet());
-    vrNames.sort(String::compareTo);
-
-    for (String vrName : vrNames) {
-      if (futureUses.containsKey(vrName)) {
-        continue;
-      }
-
-      Register phys = vrToPr.get(vrName);
-      if (phys == null) {
-        continue;
-      }
-
-      // still need to save it if this instruction wrote a new value
-      if (dirty.contains(vrName)) {
-        spillVirtual(vrName, phys, vrMap, vrClasses, fp);
-        dirty.remove(vrName);
-      }
-
-      vrToPr.remove(vrName);
-      prToVr.remove(phys.name);
-    }
-  }
-
-  // spill whatever lives in this physical register, then free it
-  private void spillAndUnbind(String physName, Map<String, Integer> vrMap,
-      Map<String, RegisterClass> vrClasses, Register fp, Map<String, Register> vrToPr,
-      Map<String, String> prToVr, Set<String> dirty) {
-    String vrName = prToVr.remove(physName);
-    if (vrName == null) {
-      return;
+    if (nextIdx >= pool.size()) {
+      throw new IllegalStateException("ran out of spill scratch regs for " + registerClass);
     }
 
-    Register phys = vrToPr.remove(vrName);
-    if (phys != null && dirty.contains(vrName)) {
-      spillVirtual(vrName, phys, vrMap, vrClasses, fp);
-      dirty.remove(vrName);
-    }
+    Register phys = pool.get(nextIdx);
+    scratch.regs.put(vrName, phys);
+    return phys;
   }
 
   // actual store instruction for a virtual register
@@ -685,17 +686,9 @@ public class IntrablockAllocator {
     return registerClass == RegisterClass.FLOAT ? MIPSOp.S_S : MIPSOp.SW;
   }
 
-  // choose the physical register pool
-  private List<Register> poolFor(RegisterClass registerClass) {
-    return registerClass == RegisterClass.FLOAT ? FLOAT_REGS : INT_REGS;
-  }
-
-  // forget all current register mappings
-  private void clearState(Map<String, Register> vrToPr, Map<String, String> prToVr,
-      Set<String> dirty) {
-    vrToPr.clear();
-    prToVr.clear();
-    dirty.clear();
+  // choose the scratch pool for spilled values
+  private List<Register> scratchPoolFor(RegisterClass registerClass) {
+    return registerClass == RegisterClass.FLOAT ? FLOAT_SPILL_REGS : INT_SPILL_REGS;
   }
 
   // build a copy of the instruction with physical regs substituted in
