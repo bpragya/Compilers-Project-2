@@ -18,30 +18,60 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Intra-block greedy register allocator (spec §1.2.2).
+ *
+ * <p>Algorithm overview, per-block:
+ * <ol>
+ *   <li>Partition instructions into basic blocks. A block starts at a label
+ *       (potential branch target) and ends at a branch, jump, or call.</li>
+ *   <li>Count how many times each virtual register is <em>read</em> in the block
+ *       (writes-only don't benefit from staying in a register across instructions).</li>
+ *   <li>Greedily assign physical registers: most-read virtual gets $t0, next gets
+ *       $t1, … until the pool is exhausted. Remaining virtuals are spilled.</li>
+ *   <li>Block entry: load the assigned virtuals whose first block access is a read
+ *       (those first accessed as writes are defined here — no entry load needed).</li>
+ *   <li>Per instruction: assigned virtuals use their physical reg directly; spilled
+ *       virtuals borrow a scratch reg and get a load before / store after.</li>
+ *   <li>Block exit (before every branch/call, or at fall-through): store all
+ *       assigned registers back to their stack slots so memory is authoritative.</li>
+ * </ol>
+ *
+ * <p>Register pools (spec says "only use the 10 temporary registers $t0–$t9"):
+ * <ul>
+ *   <li>Allocation pool (persistent for the block): $t0–$t6 (int), $f2–$f24 (float)</li>
+ *   <li>Scratch/spill pool (per-instruction only):  $t7–$t9 (int), $f26–$f30 (float)</li>
+ * </ul>
+ * Every virtual register also gets a fixed fp-relative stack slot so spilled values
+ * always have a home and block-exit stores always have a target.
+ */
 public class IntrablockAllocator {
-  // need some way to differentiate regs
   private enum RegisterClass {
     INT,
     FLOAT
   }
 
-  // these are the integer regs we keep assigned for a whole block
+  // Allocation pool: these physical registers hold an assigned virtual for the entire block.
+  // $t0-$t6 (7 regs) — the top-7 most-read virtuals per block win a slot here.
   private static final List<Register> INT_REGS = Arrays.asList(
       new Register("$t0", false),
       new Register("$t1", false),
       new Register("$t2", false),
       new Register("$t3", false),
-      new Register("$t4", false));
-  
-  // keep a few integer temps around for spilled values inside one instruction
-  private static final List<Register> INT_SPILL_REGS = Arrays.asList(
+      new Register("$t4", false),
       new Register("$t5", false),
-      new Register("$t6", false),
-      new Register("$t7", false));
+      new Register("$t6", false));
 
-  // same idea for float values
+  // Scratch pool: reserved for spilled virtuals that need a load/store within one instruction.
+  // Using $t7-$t9 keeps them separate from the allocation pool so they never collide.
+  private static final List<Register> INT_SPILL_REGS = Arrays.asList(
+      new Register("$t7", false),
+      new Register("$t8", false),
+      new Register("$t9", false));
+
+  // Float allocation pool: $f2-$f24 even regs ($f0 is the float return register, so start at $f2).
   private static final List<Register> FLOAT_REGS = Arrays.asList(
-      // return uses $f0, count from f2 inclusive
+      // $f0/$f1 reserved for return value; use even-numbered regs (MIPS float pairs)
       new Register("$f2", false),
       new Register("$f4", false),
       new Register("$f6", false),
@@ -54,7 +84,7 @@ public class IntrablockAllocator {
       new Register("$f22", false),
       new Register("$f24", false));
 
-  // float scratch regs for spilled reads/writes
+  // Float scratch pool: $f26-$f30 — same purpose as INT_SPILL_REGS but for float virtuals.
   private static final List<Register> FLOAT_SPILL_REGS = Arrays.asList(
       new Register("$f26", false),
       new Register("$f28", false),
@@ -68,7 +98,15 @@ public class IntrablockAllocator {
   private int mipsIdx = 0;
   private String pendingLabel = null;
 
-  // for one block: who stays in a real reg, and who needs a load at block entry
+  /**
+   * Result of planning a single block.
+   *
+   * <p>{@code assignedRegs}: the top-N most-read virtuals and the physical register each won.
+   * <p>{@code entryLoads}: the subset of assigned virtuals whose first block access is a read —
+   * these must be loaded from the stack at block entry because their values come from before
+   * the block. Virtuals first accessed as writes are excluded: they are defined here, so loading
+   * them would read an uninitialized (or stale) stack slot.
+   */
   private static final class BlockPlan {
     private final Map<String, Register> assignedRegs;
     private final Set<String> entryLoads;
@@ -79,7 +117,7 @@ public class IntrablockAllocator {
     }
   }
 
-  // scratch regs only live for one instruction while we deal with spills
+  // Temporary scratch assignments valid only for one instruction (reset per instruction).
   private static final class ScratchPool {
     private final Map<String, Register> regs = new HashMap<>();
     private int nextInt = 0;
@@ -342,13 +380,23 @@ public class IntrablockAllocator {
     }
   }
 
-  // split selected mips into blocks so allocation stays local
+  /**
+   * Partition instructions into basic blocks (spec §1.2.2, step 1).
+   *
+   * <p>Block boundaries follow the standard rule:
+   * <ul>
+   *   <li>A labeled instruction starts a new block — it may be a branch target from elsewhere.</li>
+   *   <li>A branch, jump, or call ends the current block. Calls additionally end the block
+   *       because they are ABI entry points: the callee may overwrite every $t register, so
+   *       any value kept in a $t across a call would be silently clobbered.</li>
+   * </ul>
+   */
   private List<List<MIPSInstruction>> buildBlocks(List<MIPSInstruction> orderedInstructions) {
     List<List<MIPSInstruction>> blocks = new ArrayList<>();
     List<MIPSInstruction> current = new ArrayList<>();
 
     for (MIPSInstruction inst : orderedInstructions) {
-      // labels can be branch targets, so start a new block there
+      // Label = potential branch target → anything before it belongs to the previous block.
       if (inst.label != null && !current.isEmpty()) {
         blocks.add(current);
         current = new ArrayList<>();
@@ -356,7 +404,7 @@ public class IntrablockAllocator {
 
       current.add(inst);
 
-      // branches/jumps end the current block, and calls do too since $t regs are caller-saved
+      // Branch/jump/call ends this block; the next instruction belongs to a fresh block.
       if (endsAllocationBlock(inst)) {
         blocks.add(current);
         current = new ArrayList<>();
@@ -394,14 +442,29 @@ public class IntrablockAllocator {
     }
   }
 
-  // main block allocator
+  /**
+   * Emit all physical instructions for one basic block (spec §1.2.2, steps 3-6).
+   *
+   * <p>Three phases:
+   * <ol>
+   *   <li><b>Entry loads</b> (step 3/4): load the assigned virtuals that are live-in
+   *       (first accessed as reads) from their stack slots into their physical regs.</li>
+   *   <li><b>Body</b> (step 5): translate each instruction; assigned virtuals use
+   *       their physical reg directly; spilled virtuals borrow a scratch reg.</li>
+   *   <li><b>Exit stores</b> (step 4/6): before every block-ending instruction (branch,
+   *       jump, call) — and at fall-through — store all assigned physical regs back to
+   *       their stack slots so memory is the source of truth for the next block.</li>
+   * </ol>
+   */
   private void emitBlock(List<MIPSInstruction> block, Map<String, Integer> vrMap,
       Map<String, RegisterClass> vrClasses, Register fp, String epilogueLabel) {
     BlockPlan plan = planBlock(block, vrClasses);
+    // activeAssigned tracks which assigned virtuals have been loaded (and possibly dirtied),
+    // so the exit-store pass only spills regs that were actually touched this block.
     Set<String> activeAssigned = new HashSet<>();
     boolean storedAtExit = false;
 
-    // if the block starts with a label, any preload has to inherit it
+    // Phase 1: entry loads. The block's label (if any) must land on the first emitted instruction.
     pendingLabel = block.get(0).label;
     preloadAssignedRegisters(plan, activeAssigned, vrMap, vrClasses, fp);
 
@@ -411,15 +474,17 @@ public class IntrablockAllocator {
         pendingLabel = inst.label;
       }
 
-      // all returns still go through one shared epilogue
+      // JR = RETURN: redirect through shared epilogue so stack cleanup always runs.
       if (inst.op == MIPSOp.JR) {
+        // Phase 3 (exit stores) before leaving the block.
         storeAssignedRegisters(plan, activeAssigned, vrMap, vrClasses, fp);
         emitWithPendingLabel(new MIPSInstruction(MIPSOp.J, null, new Addr(epilogueLabel)));
         storedAtExit = true;
         break;
       }
 
-      // if control leaves here, memory needs to be up to date before the jump/call happens
+      // Any other block-ender (branch/jump/call): stores first, then the control-flow instruction,
+      // so the callee/target always sees up-to-date stack values (spec §1.2.2 step 6).
       if (endsAllocationBlock(inst)) {
         storeAssignedRegisters(plan, activeAssigned, vrMap, vrClasses, fp);
         emitAllocatedInstruction(inst, plan, activeAssigned, vrMap, vrClasses, fp);
@@ -427,17 +492,23 @@ public class IntrablockAllocator {
         break;
       }
 
+      // Phase 2: body — emit with physical register substitution.
       emitAllocatedInstruction(inst, plan, activeAssigned, vrMap, vrClasses, fp);
     }
 
-    // fallthrough blocks still need to spill their assigned regs at the end
+    // Phase 3 for fall-through blocks: the block has no explicit terminator, but the next
+    // block may not assign the same physical registers, so we must flush to the stack here.
     pendingLabel = null;
     if (!storedAtExit) {
       storeAssignedRegisters(plan, activeAssigned, vrMap, vrClasses, fp);
     }
   }
 
-  // choose which virtual regs win real regs for this block
+  /**
+   * Plan register assignment for one block (spec §1.2.2, step 2-3).
+   * Runs the greedy pass for each register class, then determines which assigned
+   * virtuals need an entry load.
+   */
   private BlockPlan planBlock(List<MIPSInstruction> block, Map<String, RegisterClass> vrClasses) {
     Map<String, Register> assignedRegs = new LinkedHashMap<>();
     assignBlockRegisters(block, vrClasses, RegisterClass.INT, INT_REGS, assignedRegs);
@@ -445,7 +516,11 @@ public class IntrablockAllocator {
     return new BlockPlan(assignedRegs, findEntryLoads(block, assignedRegs));
   }
 
-  // greedy part from the pdf: most-used live ranges get the fixed regs first
+  /**
+   * Greedy assignment (spec §1.2.2 step 2): rank the virtuals by read count and hand out
+   * physical registers from the pool in order until the pool is exhausted.
+   * Virtuals that don't win a slot are spilled (handled per-instruction in scratch regs).
+   */
   private void assignBlockRegisters(List<MIPSInstruction> block,
       Map<String, RegisterClass> vrClasses, RegisterClass registerClass,
       List<Register> pool, Map<String, Register> assignedRegs) {
@@ -456,7 +531,14 @@ public class IntrablockAllocator {
     }
   }
 
-  // count each virtual register access in the block, then sort by most uses first
+  /**
+   * Count reads of each virtual register in the block and sort descending (spec §1.2.2).
+   * The spec says "assign a register to the live range with the maximum number of uses" —
+   * we count only reads because a pure write-only register gains nothing from staying in a
+   * physical register across instructions (it has no values to re-read).
+   * Write-only virtuals get count 0 so they still appear in the ranked list (they participate
+   * in firstSeen tie-breaking) but lose to any virtual that is actually read.
+   */
   private List<String> rankBlockVirtuals(List<MIPSInstruction> block,
       Map<String, RegisterClass> vrClasses, RegisterClass registerClass) {
     Map<String, Integer> useCounts = new HashMap<>();
@@ -472,11 +554,14 @@ public class IntrablockAllocator {
         }
       }
 
+      // track the write so it appears in firstSeen (for tie-breaking), but
+      // only count it as a use if it is also read — a pure def with no reads
+      // in this block doesn't benefit from staying in a register
       Register write = inst.getWrite();
       if (write != null && write.isVirtual
           && registerClassOf(write.name, vrClasses) == registerClass) {
-        useCounts.put(write.name, useCounts.getOrDefault(write.name, 0) + 1);
         firstSeen.putIfAbsent(write.name, seenIndex++);
+        useCounts.putIfAbsent(write.name, 0);
       }
     }
 
@@ -497,7 +582,13 @@ public class IntrablockAllocator {
     return ranked;
   }
 
-  // only load the assigned regs whose first block access is a read
+  /**
+   * Determine which assigned virtuals need a load at block entry (spec §1.2.2 step 3).
+   * "At the start of each block, load a set of variables that you expect to use."
+   * Only virtuals whose first access in the block is a read need loading — they carry a
+   * value from before the block. Virtuals whose first access is a write are defined here,
+   * so there is nothing to load (loading would read a stale or uninitialized stack slot).
+   */
   private Set<String> findEntryLoads(List<MIPSInstruction> block, Map<String, Register> assignedRegs) {
     Set<String> entryLoads = new HashSet<>();
     Set<String> seen = new HashSet<>();
@@ -520,7 +611,8 @@ public class IntrablockAllocator {
     return entryLoads;
   }
 
-  // load the fixed block regs we know are live on entry
+  // Block entry loads (spec §1.2.2 step 3): bring live-in assigned virtuals from stack into
+  // their physical registers so the block body can use them without per-instruction loads.
   private void preloadAssignedRegisters(BlockPlan plan, Set<String> activeAssigned,
       Map<String, Integer> vrMap, Map<String, RegisterClass> vrClasses, Register fp) {
     List<String> entryLoads = new ArrayList<>(plan.entryLoads);
@@ -534,7 +626,9 @@ public class IntrablockAllocator {
     }
   }
 
-  // at block boundaries we make memory the source of truth again
+  // Block exit stores (spec §1.2.2 step 4): "at the end of each block, store all values from
+  // your registers to memory." We flush only activeAssigned (virtuals that were actually loaded
+  // or written this block) to avoid spurious stores of regs we never touched.
   private void storeAssignedRegisters(BlockPlan plan, Set<String> activeAssigned,
       Map<String, Integer> vrMap, Map<String, RegisterClass> vrClasses, Register fp) {
     List<String> vrNames = new ArrayList<>(activeAssigned);
@@ -545,7 +639,22 @@ public class IntrablockAllocator {
     }
   }
 
-  // rewrite one instruction using the block assignments plus scratch regs for spills
+  /**
+   * Translate one virtual-register instruction into physical-register instructions (spec §1.2.2 step 5).
+   *
+   * <p>For each virtual read:
+   * <ul>
+   *   <li>Assigned virtual → use its block-persistent physical reg directly (no load).</li>
+   *   <li>Spilled virtual → borrow a scratch reg ($t7-$t9) and emit a load from the stack.</li>
+   * </ul>
+   * For the virtual write:
+   * <ul>
+   *   <li>Assigned virtual → write directly into its physical reg; mark it active so the
+   *       exit-store pass knows to flush it.</li>
+   *   <li>Spilled virtual → write into a scratch reg, then immediately store to the stack
+   *       after the instruction (per-instruction store, as in naive allocation).</li>
+   * </ul>
+   */
   private void emitAllocatedInstruction(MIPSInstruction inst, BlockPlan plan,
       Set<String> activeAssigned, Map<String, Integer> vrMap,
       Map<String, RegisterClass> vrClasses, Register fp) {
@@ -568,9 +677,11 @@ public class IntrablockAllocator {
     Register physWrite = write;
     if (write != null && write.isVirtual) {
       if (plan.assignedRegs.containsKey(write.name)) {
+        // Assigned virtual: write into its persistent physical reg.
         physWrite = plan.assignedRegs.get(write.name);
         activeAssigned.add(write.name);
       } else {
+        // Spilled virtual: write into scratch, store to stack immediately after.
         physWrite = registerForWrite(write.name, scratch, vrClasses);
         spilledWrites.add(write.name);
       }
@@ -578,6 +689,7 @@ public class IntrablockAllocator {
 
     emitWithPendingLabel(substituteRegisters(inst, physReads, physWrite));
 
+    // Per-instruction store for spilled writes (same as naive for these virtuals).
     List<String> writesToStore = new ArrayList<>(spilledWrites);
     writesToStore.sort(Comparator.comparingInt(vrMap::get));
     for (String vrName : writesToStore) {
@@ -585,14 +697,25 @@ public class IntrablockAllocator {
     }
   }
 
-  // fixed block reg if it has one, otherwise scratch reg plus a load
+  /**
+   * Resolve a virtual read to a physical register, loading from the stack if necessary.
+   *
+   * <p>Two cases (spec §1.2.2 step 5):
+   * <ol>
+   *   <li>Assigned virtual: return its persistent physical reg. The entry-load pass should
+   *       have already loaded it, but if not (e.g. a write-first virtual that later gets
+   *       read again), emit a lazy load here so correctness is guaranteed.</li>
+   *   <li>Spilled virtual: allocate a scratch reg from $t7-$t9 and emit a load from the
+   *       stack. The scratch reg is only valid for this one instruction's operand list.</li>
+   * </ol>
+   */
   private Register registerForRead(String vrName, BlockPlan plan, Set<String> activeAssigned,
       ScratchPool scratch, Map<String, Integer> vrMap,
       Map<String, RegisterClass> vrClasses, Register fp) {
     if (plan.assignedRegs.containsKey(vrName)) {
       Register phys = plan.assignedRegs.get(vrName);
 
-      // block entry loading should usually cover this, but this keeps reads safe
+      // Assigned but not yet active — write-first virtual being read after its definition.
       if (!activeAssigned.contains(vrName)) {
         emitWithPendingLabel(new MIPSInstruction(loadOpFor(registerClassOf(vrName, vrClasses)), null,
             phys, frameAddress(vrMap.get(vrName), fp)));
