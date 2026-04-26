@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.Set;
 
 /*
- * Intra-block greedy register allocator.
+ * Intrablock greedy register allocator.
  *
  * The allocator keeps the most-read virtual registers in physical registers
  * for the duration of one basic block. Values that do not get selected are
