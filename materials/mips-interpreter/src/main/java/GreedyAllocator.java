@@ -49,19 +49,6 @@ public class GreedyAllocator {
   private static final List<Register> INT_SCRATCH = Arrays.asList(
       new Register("$t8", false), new Register("$t9", false));
 
-  // same split for floats, $f0 is the return register so we start at $f2
-  private static final List<Register> FLOAT_SELECTED = Arrays.asList(
-      new Register("$f2", false),  new Register("$f4", false),
-      new Register("$f6", false),  new Register("$f8", false),
-      new Register("$f10", false), new Register("$f14", false),
-      new Register("$f16", false), new Register("$f18", false),
-      new Register("$f20", false), new Register("$f22", false),
-      new Register("$f24", false));
-
-  private static final List<Register> FLOAT_SCRATCH = Arrays.asList(
-      new Register("$f26", false), new Register("$f28", false),
-      new Register("$f30", false));
-
   private final PrintStream out;
   private final Map<Integer, MIPSInstruction> instructions = new LinkedHashMap<>();
   private final Map<String, Integer> labels = new LinkedHashMap<>();
@@ -89,7 +76,6 @@ public class GreedyAllocator {
   private static class Scratch {
     final Map<String, Register> assigned = new HashMap<>();
     int nextInt = 0;
-    int nextFloat = 0;
   }
 
   public GreedyAllocator(PrintStream out) {
@@ -111,9 +97,6 @@ public class GreedyAllocator {
     // spilled virtuals use it on every instruction just like the naive allocator
     Map<String, Integer> stackSlot = assignStackSlots(instrs);
 
-    // we need to know which virtuals live in float registers vs integer registers
-    Set<String> floatVirtuals = findFloatVirtuals(instrs);
-
     emitPrologue(sp, fp, ra);
 
     int frameSize = 4 * stackSlot.size();
@@ -128,7 +111,7 @@ public class GreedyAllocator {
     String epilogue = func.name + "_epilogue";
     List<List<MIPSInstruction>> blocks = splitIntoBlocks(instrs);
     for (List<MIPSInstruction> block : blocks) {
-      processBlock(block, stackSlot, floatVirtuals, fp, epilogue);
+      processBlock(block, stackSlot, fp, epilogue);
     }
     if (trailingLabel != null) {
       emit(new MIPSInstruction(MIPSOp.J, trailingLabel, new Addr(epilogue)));
@@ -174,9 +157,9 @@ public class GreedyAllocator {
   }
 
   private void processBlock(List<MIPSInstruction> block, Map<String, Integer> stackSlot,
-      Set<String> floatVirtuals, Register fp, String epilogue) {
+      Register fp, String epilogue) {
 
-    BlockPlan plan = planBlock(block, floatVirtuals);
+    BlockPlan plan = planBlock(block);
 
     // "dirty" tracks which selected registers have been touched this block
     // we only flush the ones we've actually written into
@@ -185,7 +168,7 @@ public class GreedyAllocator {
 
     // if this block has a label, it must go on the very first instruction we emit
     pendingLabel = block.get(0).label;
-    loadEntryRegisters(plan, dirty, stackSlot, floatVirtuals, fp);
+    loadEntryRegisters(plan, dirty, stackSlot, fp);
 
     for (int i = 0; i < block.size(); i++) {
       MIPSInstruction inst = block.get(i);
@@ -193,7 +176,7 @@ public class GreedyAllocator {
 
       if (inst.op == MIPSOp.JR) {
         // return: write everything back before jumping to the epilogue for frame cleanup
-        flushToStack(plan, dirty, stackSlot, floatVirtuals, fp);
+        flushToStack(plan, dirty, stackSlot, fp);
         emitLabeled(new MIPSInstruction(MIPSOp.J, null, new Addr(epilogue)));
         flushedAlready = true;
         break;
@@ -201,26 +184,25 @@ public class GreedyAllocator {
 
       if (isBlockEnd(inst)) {
         // leaving the block: flush first so whoever we jump to sees up-to-date stack values
-        flushToStack(plan, dirty, stackSlot, floatVirtuals, fp);
-        translateInstruction(inst, plan, dirty, stackSlot, floatVirtuals, fp);
+        flushToStack(plan, dirty, stackSlot, fp);
+        translateInstruction(inst, plan, dirty, stackSlot, fp);
         flushedAlready = true;
         break;
       }
 
-      translateInstruction(inst, plan, dirty, stackSlot, floatVirtuals, fp);
+      translateInstruction(inst, plan, dirty, stackSlot, fp);
     }
 
     // fall-through: next block starts fresh so we still need to write back
     pendingLabel = null;
     if (!flushedAlready) {
-      flushToStack(plan, dirty, stackSlot, floatVirtuals, fp);
+      flushToStack(plan, dirty, stackSlot, fp);
     }
   }
 
-  private BlockPlan planBlock(List<MIPSInstruction> block, Set<String> floatVirtuals) {
+  private BlockPlan planBlock(List<MIPSInstruction> block) {
     Map<String, Register> selected = new LinkedHashMap<>();
-    greedyAssign(block, floatVirtuals, false, INT_SELECTED,   selected);
-    greedyAssign(block, floatVirtuals, true,  FLOAT_SELECTED, selected);
+    greedyAssign(block, INT_SELECTED, selected);
     return new BlockPlan(selected, findLiveIns(block, selected));
   }
 
@@ -230,8 +212,8 @@ public class GreedyAllocator {
    * we only count reads because a virtual that's only written here gains
    * nothing from sitting in a register, since there's no value to avoid re-loading.
    */
-  private void greedyAssign(List<MIPSInstruction> block, Set<String> floatVirtuals,
-      boolean wantFloat, List<Register> pool, Map<String, Register> selected) {
+  private void greedyAssign(List<MIPSInstruction> block, List<Register> pool,
+      Map<String, Register> selected) {
 
     Map<String, Integer> readCount = new HashMap<>();
     Map<String, Integer> firstSeen = new HashMap<>();
@@ -239,13 +221,13 @@ public class GreedyAllocator {
 
     for (MIPSInstruction inst : block) {
       for (Register r : inst.getReads()) {
-        if (r != null && r.isVirtual && floatVirtuals.contains(r.name) == wantFloat) {
+        if (r != null && r.isVirtual) {
           readCount.merge(r.name, 1, Integer::sum);
           firstSeen.putIfAbsent(r.name, seenIdx++);
         }
       }
       Register w = inst.getWrite();
-      if (w != null && w.isVirtual && floatVirtuals.contains(w.name) == wantFloat) {
+      if (w != null && w.isVirtual) {
         firstSeen.putIfAbsent(w.name, seenIdx++);
         readCount.putIfAbsent(w.name, 0); // write-only: track for ordering but don't count
       }
@@ -292,12 +274,11 @@ public class GreedyAllocator {
   }
 
   private void loadEntryRegisters(BlockPlan plan, Set<String> dirty,
-      Map<String, Integer> stackSlot, Set<String> floatVirtuals, Register fp) {
+      Map<String, Integer> stackSlot, Register fp) {
     List<String> toLoad = new ArrayList<>(plan.loadAtEntry);
     toLoad.sort(Comparator.comparingInt(stackSlot::get));
     for (String vr : toLoad) {
-      MIPSOp op = floatVirtuals.contains(vr) ? MIPSOp.L_S : MIPSOp.LW;
-      emitLabeled(new MIPSInstruction(op, null,
+      emitLabeled(new MIPSInstruction(MIPSOp.LW, null,
           plan.selected.get(vr), slot(stackSlot.get(vr), fp)));
       dirty.add(vr);
     }
@@ -306,12 +287,11 @@ public class GreedyAllocator {
   // write all the selected registers we touched back to their stack slots -
   // we only flush dirty ones, no point storing a register we never touched
   private void flushToStack(BlockPlan plan, Set<String> dirty,
-      Map<String, Integer> stackSlot, Set<String> floatVirtuals, Register fp) {
+      Map<String, Integer> stackSlot, Register fp) {
     List<String> toFlush = new ArrayList<>(dirty);
     toFlush.sort(Comparator.comparingInt(stackSlot::get));
     for (String vr : toFlush) {
-      MIPSOp op = floatVirtuals.contains(vr) ? MIPSOp.S_S : MIPSOp.SW;
-      emitLabeled(new MIPSInstruction(op, null,
+      emitLabeled(new MIPSInstruction(MIPSOp.SW, null,
           plan.selected.get(vr), slot(stackSlot.get(vr), fp)));
     }
   }
@@ -322,7 +302,7 @@ public class GreedyAllocator {
    *   spilled virtual   -->  borrow scratch, use it for this instruction, then return it
    */
   private void translateInstruction(MIPSInstruction inst, BlockPlan plan, Set<String> dirty,
-      Map<String, Integer> stackSlot, Set<String> floatVirtuals, Register fp) {
+      Map<String, Integer> stackSlot, Register fp) {
 
     Register[] vReads = inst.getReads();
     Register[] pReads = new Register[vReads.length];
@@ -332,7 +312,7 @@ public class GreedyAllocator {
     for (int i = 0; i < vReads.length; i++) {
       Register r = vReads[i];
       if (r != null && r.isVirtual) {
-        pReads[i] = resolveRead(r.name, plan, dirty, scratch, stackSlot, floatVirtuals, fp);
+        pReads[i] = resolveRead(r.name, plan, dirty, scratch, stackSlot, fp);
       } else {
         pReads[i] = r;
       }
@@ -345,7 +325,7 @@ public class GreedyAllocator {
         pWrite = plan.selected.get(vWrite.name);
         dirty.add(vWrite.name); // we've written into this register now, so flush it at exit
       } else {
-        pWrite = scratchForWrite(vWrite.name, floatVirtuals.contains(vWrite.name), scratch);
+        pWrite = scratchForWrite(vWrite.name, scratch);
         spilledWrites.add(vWrite.name);
       }
     }
@@ -356,8 +336,7 @@ public class GreedyAllocator {
     List<String> toStore = new ArrayList<>(spilledWrites);
     toStore.sort(Comparator.comparingInt(stackSlot::get));
     for (String vr : toStore) {
-      MIPSOp op = floatVirtuals.contains(vr) ? MIPSOp.S_S : MIPSOp.SW;
-      emitLabeled(new MIPSInstruction(op, null,
+      emitLabeled(new MIPSInstruction(MIPSOp.SW, null,
           scratch.assigned.get(vr), slot(stackSlot.get(vr), fp)));
     }
   }
@@ -368,14 +347,13 @@ public class GreedyAllocator {
    *   if it's spilled, grab a scratch register and load the value in
    */
   private Register resolveRead(String vr, BlockPlan plan, Set<String> dirty,
-      Scratch scratch, Map<String, Integer> stackSlot, Set<String> floatVirtuals, Register fp) {
+      Scratch scratch, Map<String, Integer> stackSlot, Register fp) {
 
     if (plan.selected.containsKey(vr)) {
       Register phys = plan.selected.get(vr);
       if (!dirty.contains(vr)) {
         // this virtual was written before being read - load its value back now
-        MIPSOp op = floatVirtuals.contains(vr) ? MIPSOp.L_S : MIPSOp.LW;
-        emitLabeled(new MIPSInstruction(op, null, phys, slot(stackSlot.get(vr), fp)));
+        emitLabeled(new MIPSInstruction(MIPSOp.LW, null, phys, slot(stackSlot.get(vr), fp)));
         dirty.add(vr);
       }
       return phys;
@@ -385,9 +363,8 @@ public class GreedyAllocator {
     if (scratch.assigned.containsKey(vr)) return scratch.assigned.get(vr);
 
     // spilled: borrow a scratch reg and load from the stack
-    Register phys = borrowScratch(vr, floatVirtuals.contains(vr), scratch);
-    MIPSOp op = floatVirtuals.contains(vr) ? MIPSOp.L_S : MIPSOp.LW;
-    emitLabeled(new MIPSInstruction(op, null, phys, slot(stackSlot.get(vr), fp)));
+    Register phys = borrowScratch(vr, scratch);
+    emitLabeled(new MIPSInstruction(MIPSOp.LW, null, phys, slot(stackSlot.get(vr), fp)));
     return phys;
   }
 
@@ -396,37 +373,33 @@ public class GreedyAllocator {
    * spilled reads, reuse one of those read registers as the destination. this
    * two-scratch instructions valid without changing the load/store behavior.
    */
-  private Register scratchForWrite(String vr, boolean isFloat, Scratch scratch) {
+  private Register scratchForWrite(String vr, Scratch scratch) {
     if (scratch.assigned.containsKey(vr)) return scratch.assigned.get(vr);
-    if (hasScratchLeft(isFloat, scratch)) return borrowScratch(vr, isFloat, scratch);
+    if (hasScratchLeft(scratch)) return borrowScratch(vr, scratch);
 
-    Register reused = firstBorrowedScratch(isFloat, scratch);
+    Register reused = firstBorrowedScratch(scratch);
     if (reused == null) throw new IllegalStateException("out of scratch regs");
     scratch.assigned.put(vr, reused);
     return reused;
   }
 
-  private boolean hasScratchLeft(boolean isFloat, Scratch scratch) {
-    return isFloat
-        ? scratch.nextFloat < FLOAT_SCRATCH.size()
-        : scratch.nextInt < INT_SCRATCH.size();
+  private boolean hasScratchLeft(Scratch scratch) {
+    return scratch.nextInt < INT_SCRATCH.size();
   }
 
-  private Register firstBorrowedScratch(boolean isFloat, Scratch scratch) {
-    List<Register> pool = isFloat ? FLOAT_SCRATCH : INT_SCRATCH;
+  private Register firstBorrowedScratch(Scratch scratch) {
     for (Register reg : scratch.assigned.values()) {
-      if (pool.contains(reg)) return reg;
+      if (INT_SCRATCH.contains(reg)) return reg;
     }
     return null;
   }
 
   // grab the next available scratch register for this virtual in this instruction
-  private Register borrowScratch(String vr, boolean isFloat, Scratch scratch) {
+  private Register borrowScratch(String vr, Scratch scratch) {
     if (scratch.assigned.containsKey(vr)) return scratch.assigned.get(vr);
-    List<Register> pool = isFloat ? FLOAT_SCRATCH : INT_SCRATCH;
-    int idx = isFloat ? scratch.nextFloat++ : scratch.nextInt++;
-    if (idx >= pool.size()) throw new IllegalStateException("out of scratch regs");
-    Register phys = pool.get(idx);
+    int idx = scratch.nextInt++;
+    if (idx >= INT_SCRATCH.size()) throw new IllegalStateException("out of scratch regs");
+    Register phys = INT_SCRATCH.get(idx);
     scratch.assigned.put(vr, phys);
     return phys;
   }
@@ -471,31 +444,6 @@ public class GreedyAllocator {
       if (w != null && w.isVirtual && slots.putIfAbsent(w.name, offset) == null) offset -= 4;
     }
     return slots;
-  }
-
-  // scan all instructions to figure out which virtuals are float vs integer
-  // we need this to pick the right register file and load/store opcodes
-  private Set<String> findFloatVirtuals(List<MIPSInstruction> instrs) {
-    Set<String> floats = new HashSet<>();
-    for (MIPSInstruction inst : instrs) {
-      switch (inst.op) {
-        case LI_S, MOV_S, ADD_S, ADDI_S, SUB_S, MUL_S, DIV_S,
-             C_EQ_S, C_NE_S, C_LT_S, C_GT_S, C_GE_S -> {
-          for (MIPSOperand op : inst.operands)
-            if (op instanceof Register r && r.isVirtual) floats.add(r.name);
-        }
-        case L_S -> {
-          Register dst = (Register) inst.operands.get(MIPSInstruction.R_D_LW);
-          if (dst.isVirtual) floats.add(dst.name);
-        }
-        case S_S -> {
-          Register src = (Register) inst.operands.get(MIPSInstruction.R_S_SW);
-          if (src.isVirtual) floats.add(src.name);
-        }
-        default -> {}
-      }
-    }
-    return floats;
   }
 
   private int localArrayDataSize(IRFunction func) {
