@@ -22,20 +22,20 @@ import java.util.Set;
  * Intra-block greedy register allocator.
  *
  * The idea: instead of loading and storing every variable around every instruction
- * (that's what the naive allocator does), we look at each basic block, figure out
+ * (since that's what naive does), we look at each basic block, figure out
  * which variables get read the most, and keep those in physical registers for the
  * whole block. Everything else still spills to the stack like naive does.
  *
  * Per block:
- *   1. count reads per virtual → most-read ones get "pinned" to $t0, $t1, ...
+ *   1. count reads per virtual --> most-read ones get "pinned" to $t0, $t1, ...
  *   2. load the pinned ones at block entry (only if they're read before they're written)
  *   3. run through instructions — pinned virtuals just use their register,
  *      spilled virtuals borrow $t7/$t8/$t9 for one instruction at a time
  *   4. flush everything back to the stack before leaving the block
  *
  * We split $t0-$t9 into two groups:
- *   $t0-$t6  →  pinned: held for the entire block
- *   $t7-$t9  →  scratch: loaned out per instruction, immediately returned
+ *   $t0-$t6  -->  pinned: held for the entire block
+ *   $t7-$t9  -->  scratch: loaned out per instruction, immediately returned
  */
 public class GreedyAllocator {
 
@@ -72,8 +72,8 @@ public class GreedyAllocator {
 
   /*
    * What we decide before processing a block:
-   *   pinned      → which virtual gets which physical register for this block
-   *   loadAtEntry → the pinned virtuals we need to load at the start
+   *   pinned      --> which virtual gets which physical register for this block
+   *   loadAtEntry --> the pinned virtuals we need to load at the start
    *                 (only ones that are read before being written — the rest start undefined here)
    */
   private static class BlockPlan {
@@ -320,8 +320,8 @@ public class GreedyAllocator {
 
   /*
    * Translate one virtual-register instruction into real registers:
-   *   pinned virtual  →  just use its physical register, it's already there
-   *   spilled virtual →  borrow a scratch register, load from stack, use it, store back
+   *   pinned virtual  -->  just use its physical register, it's already there
+   *   spilled virtual -->  borrow a scratch register, load from stack, use it, store back
    */
   private void translateInstruction(MIPSInstruction inst, BlockPlan plan, Set<String> dirty,
       Map<String, Integer> stackSlot, Set<String> floatVirtuals, Register fp) {
