@@ -39,14 +39,14 @@ import java.util.Set;
 public class GreedyAllocator {
 
   // the registers we hand out to the most-used virtuals in a block
-  private static final List<Register> INT_SELECTED = Arrays.asList(
+  private static final List<Register> SELECTED_REGS = Arrays.asList(
       new Register("$t0", false), new Register("$t1", false),
       new Register("$t2", false), new Register("$t3", false),
       new Register("$t4", false), new Register("$t5", false),
       new Register("$t6", false), new Register("$t7", false));
 
   // reserved for spilled virtuals that need to briefly exist during one instruction
-  private static final List<Register> INT_SCRATCH = Arrays.asList(
+  private static final List<Register> SCRATCH_REGS = Arrays.asList(
       new Register("$t8", false), new Register("$t9", false));
 
   private final PrintStream out;
@@ -202,7 +202,7 @@ public class GreedyAllocator {
 
   private BlockPlan planBlock(List<MIPSInstruction> block) {
     Map<String, Register> selected = new LinkedHashMap<>();
-    greedyAssign(block, INT_SELECTED, selected);
+    greedyAssign(block, SELECTED_REGS, selected);
     return new BlockPlan(selected, findLiveIns(block, selected));
   }
 
@@ -384,12 +384,12 @@ public class GreedyAllocator {
   }
 
   private boolean hasScratchLeft(Scratch scratch) {
-    return scratch.nextInt < INT_SCRATCH.size();
+    return scratch.nextInt < SCRATCH_REGS.size();
   }
 
   private Register firstBorrowedScratch(Scratch scratch) {
     for (Register reg : scratch.assigned.values()) {
-      if (INT_SCRATCH.contains(reg)) return reg;
+      if (SCRATCH_REGS.contains(reg)) return reg;
     }
     return null;
   }
@@ -398,8 +398,8 @@ public class GreedyAllocator {
   private Register borrowScratch(String vr, Scratch scratch) {
     if (scratch.assigned.containsKey(vr)) return scratch.assigned.get(vr);
     int idx = scratch.nextInt++;
-    if (idx >= INT_SCRATCH.size()) throw new IllegalStateException("out of scratch regs");
-    Register phys = INT_SCRATCH.get(idx);
+    if (idx >= SCRATCH_REGS.size()) throw new IllegalStateException("out of scratch regs");
+    Register phys = SCRATCH_REGS.get(idx);
     scratch.assigned.put(vr, phys);
     return phys;
   }
