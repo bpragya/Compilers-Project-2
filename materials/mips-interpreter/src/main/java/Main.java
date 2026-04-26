@@ -51,7 +51,7 @@ public class Main {
         NaiveAllocator allocator = new NaiveAllocator(out);
         allocator.allocate(func, is.getInstructions(), is.getPendingLabel());
       } else if (allocatorFlag.equals("--greedy")) {
-        IntrablockAllocator allocator = new IntrablockAllocator(out);
+        GreedyAllocator allocator = new GreedyAllocator(out);
         allocator.allocate(func, is.getInstructions(), is.getPendingLabel());
       } else {
         System.err.println("Unknown allocator flag: " + allocatorFlag);
