@@ -19,11 +19,11 @@ import java.util.Map;
 import java.util.Set;
 
 /*
- * Intrablock greedy register allocator.
+ * Intrablock greedy register allocator
  *
  * The allocator keeps the most-read virtual registers in physical registers
  * for the duration of one basic block. Values that do not get selected are
- * spilled and use short-lived scratch registers around each instruction.
+ * spilled and use short-lived (i.e., "temporary") scratch registers around each instruction.
  *
  * The integer register split is:
  *
@@ -57,8 +57,8 @@ public class GreedyAllocator {
 
   /*
    * what we decide before processing a block:
-   * a.) selected    --> which virtual gets which physical register for this block
-   * b.) loadAtEntry --> the selected virtuals we need to load at the start (only ones that are read before being written)
+   * - selected    --> which virtual gets which physical register for this block
+   * - loadAtEntry --> the selected virtuals we need to load at the start (only ones that are read before being written)
    */
   private static class BlockPlan {
     final Map<String, Register> selected;
@@ -92,7 +92,7 @@ public class GreedyAllocator {
 
     List<MIPSInstruction> instrs = sortedInstructions(input);
 
-    // every virtual gets a stack slot, selected virtuals use it at block boundaries,
+    // every virtual gets a stack slot, selected virtuals use it at block boundaries
     Map<String, Integer> stackSlot = assignStackSlots(instrs);
     // spilled virtuals use it on every instruction just like the naive allocator
 
@@ -123,8 +123,8 @@ public class GreedyAllocator {
   public Map<String, Integer> getLabels() { return labels; }
 
   /*
-   * A block starts whenever we hit a label (someone might jump here) and ends at any branch, jump, or call.
-   * Calls end blocks too because the callee is free to trash all $t registers.
+   * A block starts whenever we hit a label (someone might jump here) and ends at any branch, jump, or call
+   * Calls end blocks too because the callee is free to trash registers
    */
   private List<List<MIPSInstruction>> splitIntoBlocks(List<MIPSInstruction> instrs) {
     List<List<MIPSInstruction>> blocks = new ArrayList<>();
@@ -160,8 +160,8 @@ public class GreedyAllocator {
     BlockPlan plan = planBlock(block);
 
     // "dirty" tracks which selected registers have been touched this block
-    // we only flush the ones we've actually written into
     Set<String> dirty = new HashSet<>();
+    // we only flush the ones we've actually written into
     boolean flushedAlready = false;
 
     // if this block has a label, it must go on the very first instruction we emit
@@ -215,7 +215,7 @@ public class GreedyAllocator {
     int seenIdx = 0;
     // walk the block once and record:
     // a.) readCount  --> how often each virtual register is read
-    // b.) firstSeen  --> the order each virtual first appeared (used as a tiebreaker)
+    // b.) firstSeen --> the order each virtual first appeared (used as a tiebreaker)
     for (MIPSInstruction inst : block) {
       for (Register r : inst.getReads()) {
         if (r == null || !r.isVirtual) continue;
@@ -299,10 +299,10 @@ public class GreedyAllocator {
     }
   }
 
-  // write all the selected registers we touched back to their stack slots -
-  // we only flush dirty ones, no point storing a register we never touched
+  // write all the selected registers we touched back to their stack slots
   private void flushToStack(BlockPlan plan, Set<String> dirty,
       Map<String, Integer> stackSlot, Register fp) {
+    // we only flush dirty ones, no point storing a register we never touched
     List<String> toFlush = new ArrayList<>(dirty);
     toFlush.sort(Comparator.comparingInt(stackSlot::get));
     for (String vr : toFlush) {
@@ -314,7 +314,7 @@ public class GreedyAllocator {
   /*
    * Translate one virtual-register instruction into real registers:
    * a.) selected virtual  -->  just use its physical register, it's already there
-   * b.) spilled virtual   -->  borrow scratch, use it for this instruction, then return it
+   * b.) spilled virtual  -->  borrow scratch, use it for this instruction, then return it
    */
   private void translateInstruction(MIPSInstruction inst, BlockPlan plan, Set<String> dirty,
       Map<String, Integer> stackSlot, Register fp) {
@@ -338,7 +338,8 @@ public class GreedyAllocator {
     if (vWrite != null && vWrite.isVirtual) {
       if (plan.selected.containsKey(vWrite.name)) {
         pWrite = plan.selected.get(vWrite.name);
-        dirty.add(vWrite.name); // we've written into this register now, so flush it at exit
+        dirty.add(vWrite.name); 
+        // we've written into this register now, so flush it at exit
       } else {
         pWrite = scratchForWrite(vWrite.name, scratch);
         spilledWrites.add(vWrite.name);
@@ -347,7 +348,7 @@ public class GreedyAllocator {
 
     emitLabeled(substituteRegs(inst, vReads, pReads, vWrite, pWrite));
 
-    // spilled writes need to go back to the stack right after the instruction
+    // spilled writes need to go back to the stack right after the instruction, SW for that
     List<String> toStore = new ArrayList<>(spilledWrites);
     toStore.sort(Comparator.comparingInt(stackSlot::get));
     for (String vr : toStore) {
@@ -358,8 +359,8 @@ public class GreedyAllocator {
 
   /*
    * Get the physical register to use for reading a virtual:
-   *   if it's selected, return its register (and load from stack if we haven't yet)
-   *   if it's spilled, grab a scratch register and load the value in
+   * a.) if it's selected, return its register (and load from stack if we haven't yet)
+   * b.) if it's spilled, grab a scratch register and load the value in
    */
   private Register resolveRead(String vr, BlockPlan plan, Set<String> dirty,
       Scratch scratch, Map<String, Integer> stackSlot, Register fp) {
@@ -367,7 +368,7 @@ public class GreedyAllocator {
     if (plan.selected.containsKey(vr)) {
       Register phys = plan.selected.get(vr);
       if (!dirty.contains(vr)) {
-        // this virtual was written before being read - load its value back now
+        // this virtual was written before being read, so can load its value back now
         emitLabeled(new MIPSInstruction(MIPSOp.LW, null, phys, slot(stackSlot.get(vr), fp)));
         dirty.add(vr);
       }
@@ -377,7 +378,7 @@ public class GreedyAllocator {
     // already handed out a scratch reg for this virtual earlier in this instruction
     if (scratch.assigned.containsKey(vr)) return scratch.assigned.get(vr);
 
-    // spilled: borrow a scratch reg and load from the stack
+    // spilled so borrow a scratch reg and load from the stack
     Register phys = borrowScratch(vr, scratch);
     emitLabeled(new MIPSInstruction(MIPSOp.LW, null, phys, slot(stackSlot.get(vr), fp)));
     return phys;
@@ -385,7 +386,7 @@ public class GreedyAllocator {
 
   /*
    * Pick a register for a spilled write. if both scratch regs are already holding
-   * spilled reads, reuse one of those read registers as the destination. this
+   * spilled reads, reuse one of those read regs as dest. this makes
    * two-scratch instructions valid without changing the load/store behavior.
    */
   private Register scratchForWrite(String vr, Scratch scratch) {
@@ -447,7 +448,7 @@ public class GreedyAllocator {
   }
 
   // give every virtual register a fixed home on the stack at fp-relative offsets
-  // selected virtuals use this at block entry/exit; spilled virtuals use it every instruction
+  // selected virtuals use this at block entry/exit, spilled virtuals use it every instruction
   private Map<String, Integer> assignStackSlots(List<MIPSInstruction> instrs) {
     Map<String, Integer> slots = new HashMap<>();
     int offset = -4;
