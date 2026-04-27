@@ -56,7 +56,7 @@ public class GreedyAllocator {
   private String pendingLabel = null;
 
   /*
-   * what we decide before processing a block:
+   * what we decide before processing a block: our checklist per basic block
    * - selected    --> which virtual gets which physical register for this block
    * - loadAtEntry --> the selected virtuals we need to load at the start (only ones that are read before being written)
    */
