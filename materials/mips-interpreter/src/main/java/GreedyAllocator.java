@@ -27,8 +27,8 @@ import java.util.Set;
  *
  * The integer register split is:
  *
- *   $t0-$t7  -->  selected: held for the entire block
- *   $t8-$t9  -->  scratch: loaned out per instruction, immediately returned
+ *   $t0-$t7  ->  selected: held for the entire block
+ *   $t8-$t9  ->  scratch: loaned out per instruction, immediately returned
  *
  * With only two scratch registers, a spilled write would reuse one of the spilled
  * read scratch registers for its destination. That is safe for the
@@ -57,8 +57,8 @@ public class GreedyAllocator {
 
   /*
    * what we decide before processing a block: our checklist per basic block
-   * - selected    --> which virtual gets which physical register for this block
-   * - loadAtEntry --> the selected virtuals we need to load at the start (only ones that are read before being written)
+   * - selected    -> which virtual gets which physical register for this block
+   * - loadAtEntry -> the selected virtuals we need to load at the start (only ones that are read before being written)
    */
   private static class BlockPlan {
     final Map<String, Register> selected;
@@ -214,8 +214,8 @@ public class GreedyAllocator {
     Map<String, Integer> firstSeen = new HashMap<>(); // register name, mapped with freq
     int seenIdx = 0;
     // walk the block once and record:
-    // a.) readCount  --> how often each virtual register is read
-    // b.) firstSeen --> the order each virtual first appeared (used as a tiebreaker)
+    // a.) readCount  -> how often each virtual register is read
+    // b.) firstSeen -> the order each virtual first appeared (used as a tiebreaker)
     for (MIPSInstruction inst : block) {
       for (Register r : inst.getReads()) {
         if (r == null || !r.isVirtual) continue;
@@ -313,8 +313,8 @@ public class GreedyAllocator {
 
   /*
    * Translate one virtual-register instruction into real registers:
-   * a.) selected virtual  -->  just use its physical register, it's already there
-   * b.) spilled virtual  -->  borrow scratch, use it for this instruction, then return it
+   * a.) selected virtual  ->  just use its physical register, it's already there
+   * b.) spilled virtual  ->  borrow scratch, use it for this instruction, then return it
    */
   private void translateInstruction(MIPSInstruction inst, BlockPlan plan, Set<String> dirty,
       Map<String, Integer> stackSlot, Register fp) {
