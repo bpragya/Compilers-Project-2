@@ -200,7 +200,7 @@ public class GreedyAllocator {
 
   private BlockPlan planBlock(List<MIPSInstruction> block) {
     Map<String, Register> selected = new LinkedHashMap<>();
-    greedyAssign(block, SELECTED_REGS, selected);
+    greedyAllocate(block, SELECTED_REGS, selected);
     return new BlockPlan(selected, findLiveIns(block, selected));
   }
 
@@ -208,7 +208,7 @@ public class GreedyAllocator {
    * count how many times each virtual is read, then hand out registers to the most-read ones first until we run out of registers.
    * we only count reads (uses, number of loads).
    */
-  private void greedyAssign(List<MIPSInstruction> block, List<Register> pool,
+  private void greedyAllocate(List<MIPSInstruction> block, List<Register> pool,
       Map<String, Register> selected) {
     Map<String, Integer> readCount = new HashMap<>(); // register name, mapped with freq
     Map<String, Integer> firstSeen = new HashMap<>(); // register name, mapped with freq
