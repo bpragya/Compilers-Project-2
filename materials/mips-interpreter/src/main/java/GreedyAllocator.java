@@ -57,9 +57,8 @@ public class GreedyAllocator {
 
   /*
    * what we decide before processing a block:
-   *   selected    --> which virtual gets which physical register for this block
-   *   loadAtEntry --> the selected virtuals we need to load at the start
-   *                 (only ones that are read before being written)
+   * a.) selected    --> which virtual gets which physical register for this block
+   * b.) loadAtEntry --> the selected virtuals we need to load at the start (only ones that are read before being written)
    */
   private static class BlockPlan {
     final Map<String, Register> selected;
@@ -124,8 +123,7 @@ public class GreedyAllocator {
   public Map<String, Integer> getLabels() { return labels; }
 
   /*
-   * A block starts whenever we hit a label (someone might jump here)
-   * and ends at any branch, jump, or call.
+   * A block starts whenever we hit a label (someone might jump here) and ends at any branch, jump, or call.
    * Calls end blocks too because the callee is free to trash all $t registers.
    */
   private List<List<MIPSInstruction>> splitIntoBlocks(List<MIPSInstruction> instrs) {
@@ -214,38 +212,57 @@ public class GreedyAllocator {
    */
   private void greedyAssign(List<MIPSInstruction> block, List<Register> pool,
       Map<String, Register> selected) {
-
-    Map<String, Integer> readCount = new HashMap<>();
-    Map<String, Integer> firstSeen = new HashMap<>();
+    Map<String, Integer> readCount = new HashMap<>(); // register name, mapped with freq
+    Map<String, Integer> firstSeen = new HashMap<>(); // register name, mapped with freq
     int seenIdx = 0;
-
+    // walk the block once and record:
+    // a.) readCount  --> how often each virtual register is read
+    // b.) firstSeen  --> the order each virtual first appeared (used as a tiebreaker)
     for (MIPSInstruction inst : block) {
       for (Register r : inst.getReads()) {
-        if (r != null && r.isVirtual) {
-          readCount.merge(r.name, 1, Integer::sum);
-          firstSeen.putIfAbsent(r.name, seenIdx++);
+        if (r == null || !r.isVirtual) continue;
+        // increase this virtual's read count by 1.
+        // first time we see it, getOrDefault returns 0 so it ends up at 1, so its still counted.
+        int previousCount = readCount.getOrDefault(r.name, 0);
+        readCount.put(r.name, previousCount + 1);
+        // tie-breaker logic. only record the first time we see this virtual, so have this to break ties.
+        if (!firstSeen.containsKey(r.name)) {
+          firstSeen.put(r.name, seenIdx++);
         }
       }
       Register w = inst.getWrite();
       if (w != null && w.isVirtual) {
-        firstSeen.putIfAbsent(w.name, seenIdx++);
-        readCount.putIfAbsent(w.name, 0); // write-only: track for ordering but don't count
+        if (!firstSeen.containsKey(w.name)) {
+          firstSeen.put(w.name, seenIdx++);
+        }
+        // write-only virtuals enter the ranking at zero reads. they're still here, but they sort below anything that gets read at least once.
+        if (!readCount.containsKey(w.name)) {
+          readCount.put(w.name, 0);
+        }
       }
     }
-
-    // sort most-read first; break ties by who appeared first, then alphabetically
-    List<String> ranked = new ArrayList<>(readCount.keySet());
-    ranked.sort((a, b) -> {
-      int c = Integer.compare(readCount.get(b), readCount.get(a));
-      if (c != 0) return c;
-      c = Integer.compare(firstSeen.get(a), firstSeen.get(b));
-      if (c != 0) return c;
-      return a.compareTo(b);
-    });
-
-    for (int i = 0; i < Math.min(ranked.size(), pool.size()); i++) {
+    List<String> ranked = rankByReadCount(readCount, firstSeen);
+    // assign the most-used virtuals to physical registers until the pool runs out
+    int handouts = Math.min(ranked.size(), pool.size());
+    for (int i = 0; i < handouts; i++) {
       selected.put(ranked.get(i), pool.get(i));
     }
+  }
+  // rank virtuals by how useful they are to keep in a register.
+  // more reads means higher priority. ties broken through which comes first in block, and if they manage same order (through src operands) then by alphabetical order of name.
+  private static List<String> rankByReadCount(Map<String, Integer> readCount,
+      Map<String, Integer> firstSeen) {
+    List<String> ranked = new ArrayList<>(readCount.keySet());
+    ranked.sort((a, b) -> {
+      int byReadCount = Integer.compare(readCount.get(b), readCount.get(a));
+      if (byReadCount != 0) return byReadCount;
+
+      int byAppearance = Integer.compare(firstSeen.get(a), firstSeen.get(b));
+      if (byAppearance != 0) return byAppearance;
+
+      return a.compareTo(b);
+    });
+    return ranked;
   }
 
   /*
@@ -298,8 +315,8 @@ public class GreedyAllocator {
 
   /*
    * Translate one virtual-register instruction into real registers:
-   *   selected virtual  -->  just use its physical register, it's already there
-   *   spilled virtual   -->  borrow scratch, use it for this instruction, then return it
+   * a.) selected virtual  -->  just use its physical register, it's already there
+   * b.) spilled virtual   -->  borrow scratch, use it for this instruction, then return it
    */
   private void translateInstruction(MIPSInstruction inst, BlockPlan plan, Set<String> dirty,
       Map<String, Integer> stackSlot, Register fp) {
