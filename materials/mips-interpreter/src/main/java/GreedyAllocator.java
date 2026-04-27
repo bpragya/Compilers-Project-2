@@ -233,7 +233,7 @@ public class GreedyAllocator {
         if (!firstSeen.containsKey(w.name)) {
           firstSeen.put(w.name, seenIdx++);
         }
-        // write-only virtuals enter the ranking at zero reads. they're still here, but they sort below anything that gets read at least once.
+        // write-only virtuals enter the ranking at zero reads. they're still here, but they won't interfere with frequency count, since they're below anything that gets read at least once.
         if (!readCount.containsKey(w.name)) {
           readCount.put(w.name, 0);
         }
