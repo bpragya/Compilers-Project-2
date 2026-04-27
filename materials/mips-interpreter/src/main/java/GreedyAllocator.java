@@ -93,8 +93,8 @@ public class GreedyAllocator {
     List<MIPSInstruction> instrs = sortedInstructions(input);
 
     // every virtual gets a stack slot, selected virtuals use it at block boundaries,
-    // spilled virtuals use it on every instruction just like the naive allocator
     Map<String, Integer> stackSlot = assignStackSlots(instrs);
+    // spilled virtuals use it on every instruction just like the naive allocator
 
     emitPrologue(sp, fp, ra);
 
