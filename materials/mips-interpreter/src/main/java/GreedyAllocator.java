@@ -205,10 +205,8 @@ public class GreedyAllocator {
   }
 
   /*
-   * count how many times each virtual is read, then hand out registers
-   * to the most-read ones first until we run out of registers.
-   * we only count reads because a virtual that's only written here gains
-   * nothing from sitting in a register, since there's no value to avoid re-loading.
+   * count how many times each virtual is read, then hand out registers to the most-read ones first until we run out of registers.
+   * we only count reads (uses, number of loads).
    */
   private void greedyAssign(List<MIPSInstruction> block, List<Register> pool,
       Map<String, Register> selected) {
